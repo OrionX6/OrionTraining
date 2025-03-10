@@ -1,0 +1,28 @@
+{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "ms-vscode.vscode-typescript-next",
+    "formulahendry.auto-rename-tag",
+    "steoates.autoimport",
+    "dsznajder.es7-react-js-snippets",
+    "eamodio.gitlens",
+    "christian-kohler.path-intellisense",
+    "pkief.material-icon-theme",
+    "gruntfuggly.todo-tree",
+    "vscode-icons-team.vscode-icons",
+    "mikestead.dotenv",
+    "ms-vsliveshare.vsliveshare",
+    "visualstudioexptteam.vscodeintellicode",
+    "csstools.postcss",
+    "bradlc.vscode-tailwindcss",
+    "ms-playwright.playwright",
+    "ms-vscode.js-debug",
+    "ms-vscode.js-debug-companion"
+  ],
+  "unwantedRecommendations": [
+    "hookyqr.beautify",
+    "dbaeumer.jshint",
+    "ms-vscode.vscode-typescript-tslint-plugin"
+  ]
+}
