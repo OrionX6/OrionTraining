@@ -8,6 +8,17 @@ export interface Organization {
   updated_at: string;
 }
 
+// Type for registration response
+export interface RegistrationResult {
+  status: 'success';
+  user_id: string;
+  organization_id: string;
+  email: string;
+  organization_name: string;
+  role: ProfileRole;
+  created_at: string;
+}
+
 export interface Profile {
   id: string;
   email: string;
@@ -123,14 +134,20 @@ export interface Database {
     };
     Views: {};
     Functions: {
-      create_user_with_organization: {
-        Args: { p_email: string; p_organization_name: string };
-        Returns: { 
+      complete_user_registration: {
+        Args: {
+          p_user_id: string;
+          p_email: string;
+          p_organization_name: string;
+        };
+        Returns: {
           user_id: string;
           organization_id: string;
           email: string;
           organization_name: string;
           role: ProfileRole;
+          created_at: string;
+          status: string;
         };
       };
       is_admin: {

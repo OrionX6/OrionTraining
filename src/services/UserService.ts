@@ -1,6 +1,7 @@
 import { BaseService, ServiceResult } from './BaseService';
-import { Profile } from '../types/database';
+import { Profile, RegistrationResult } from '../types/database';
 import { monitoring } from './MonitoringService';
+import { clearAuthCache } from '../utils/authCache';
 
 interface PendingRegistration {
   email: string;
@@ -21,39 +22,106 @@ export class UserService extends BaseService<'profiles'> {
         throw new Error('No authenticated user');
       }
 
-      const { data, error } = await this.table
-        .select('*, organizations(*)')
-        .eq('id', session.session.user.id)
-        .maybeSingle();
+      const userId = session.session.user.id;
 
-      if (error) throw error;
-      return { data: data || null, error: null };
+      console.debug('Getting current user profile:', {
+        userId,
+        email: session.session.user.email,
+      });
+
+      // Use a direct query approach to prevent parameter duplication
+      const { data: profile, error: profileError } = await this.supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      // Handle the case where the query fails because the profile doesn't exist
+      if (profileError) {
+        // Check if it's a "not found" error, which is expected during registration
+        if (
+          profileError.code === 'PGRST116' ||
+          profileError.message?.includes('No rows found') ||
+          profileError.message?.includes('not found')
+        ) {
+          console.debug('No profile found for user:', userId);
+          return { data: null, error: null };
+        }
+
+        console.error('Error getting current user:', {
+          error: profileError,
+          userId,
+        });
+        throw profileError;
+      }
+
+      if (!profile) {
+        console.debug('No profile found for user:', userId);
+        return { data: null, error: null };
+      }
+
+      // If the profile has an organization_id, fetch the organization separately
+      if (profile.organization_id) {
+        try {
+          // Use a direct query approach to prevent parameter duplication
+          const { data: organization, error: orgError } = await this.supabase
+            .from('organizations')
+            .select('*')
+            .eq('id', profile.organization_id)
+            .single();
+
+          if (orgError) {
+            // Check if it's a "not found" error
+            if (
+              orgError.code === 'PGRST116' ||
+              orgError.message?.includes('No rows found') ||
+              orgError.message?.includes('not found')
+            ) {
+              console.warn('Organization not found:', profile.organization_id);
+            } else {
+              console.warn('Error fetching organization:', {
+                error: orgError,
+                organizationId: profile.organization_id,
+              });
+            }
+            // Continue without the organization data
+          } else if (organization) {
+            // Manually add the organization to the profile
+            profile.organization = organization;
+          }
+        } catch (orgFetchError) {
+          console.warn('Exception fetching organization:', orgFetchError);
+          // Continue without the organization data
+        }
+      }
+
+      return { data: profile, error: null };
     } catch (error) {
       const err = this.handleError(error, {
         context: 'UserService',
-        operation: 'getCurrentUser'
+        operation: 'getCurrentUser',
       });
       return { data: null, error: err };
     }
   }
 
   async initiateRegistration(
-    email: string, 
+    email: string,
     organizationName: string
   ): Promise<ServiceResult<void>> {
     try {
-      // Store registration data for later
+      console.debug('Initiating registration:', { email, organizationName });
       this.pendingRegistration = { email, organizationName };
       monitoring.startMetric('registration_initiated', {
         email,
-        organizationName
+        organizationName,
       });
       return { data: undefined, error: null };
     } catch (error) {
       const err = this.handleError(error, {
         context: 'UserService',
         operation: 'initiateRegistration',
-        email
+        email,
       });
       return { data: null, error: err };
     }
@@ -63,7 +131,7 @@ export class UserService extends BaseService<'profiles'> {
     return !!this.pendingRegistration;
   }
 
-  async completeRegistration(): Promise<ServiceResult<void>> {
+  async completeRegistration(): Promise<ServiceResult<RegistrationResult>> {
     try {
       const { data: session } = await this.supabase.auth.getSession();
       if (!session?.session?.user) {
@@ -76,68 +144,147 @@ export class UserService extends BaseService<'profiles'> {
 
       const { email, organizationName } = this.pendingRegistration;
 
-      // Create organization
-      const { data: org, error: orgError } = await this.supabase
-        .from('organizations')
-        .insert({
-          name: organizationName,
-          owner_id: session.session.user.id
-        })
-        .select()
-        .single();
+      console.debug('Starting registration completion:', {
+        userId: session.session.user.id,
+        email,
+        organizationName,
+        metadata: session.session.user.user_metadata,
+      });
 
-      if (orgError) throw orgError;
+      // Clear auth cache before registration
+      clearAuthCache();
 
-      // Create profile
-      const { error: profileError } = await this.table
-        .insert({
-          id: session.session.user.id,
+      // Complete registration using RPC
+      const { data, error: rpcError } = await this.supabase.rpc('complete_user_registration', {
+        p_user_id: session.session.user.id,
+        p_email: email,
+        p_organization_name: organizationName,
+      });
+
+      // Handle RPC error
+      if (rpcError) {
+        // Check for known error cases
+        const err = rpcError?.message || 'Registration failed';
+
+        // Log the error details
+        console.error('Registration completion failed:', {
+          error: rpcError,
+          userId: session.session.user.id,
           email,
-          organization_id: org.id,
-          role: 'admin'
+          organizationName,
         });
 
-      if (profileError) throw profileError;
+        // If profile already exists, treat as success
+        if (err.includes('Profile already exists') || err.includes('profiles_pkey')) {
+          console.log('Profile already exists, returning success');
+          return {
+            data: {
+              status: 'success',
+              message: 'Profile already exists',
+              user_id: session.session.user.id,
+              email,
+              organization_name: organizationName,
+              role: 'admin',
+              created_at: new Date().toISOString(),
+              organization_id: null as any, // Will be loaded by auth context
+            } as RegistrationResult,
+            error: null,
+          };
+        }
 
-      // Clear pending registration
+        throw new Error(err);
+      }
+
+      // Clear pending registration on success
       this.pendingRegistration = null;
 
       monitoring.startMetric('registration_completed', {
         userId: session.session.user.id,
-        organizationId: org.id
+        status: data?.status || 'unknown',
       });
 
-      return { data: undefined, error: null };
+      return { data: data as RegistrationResult, error: null };
     } catch (error) {
       const err = this.handleError(error, {
         context: 'UserService',
-        operation: 'completeRegistration'
+        operation: 'completeRegistration',
       });
       return { data: null, error: err };
     }
   }
 
-  async updateProfile(
-    updates: Partial<Profile>
-  ): Promise<ServiceResult<Profile>> {
+  async updateProfile(updates: Partial<Profile>): Promise<ServiceResult<Profile>> {
     try {
       const { data: session } = await this.supabase.auth.getSession();
       if (!session?.session?.user) {
         throw new Error('No authenticated user');
       }
 
-      const { data, error } = await this.table
+      console.debug('Updating profile:', {
+        userId: session.session.user.id,
+        updates,
+      });
+
+      const userId = session.session.user.id;
+
+      // Use a direct query approach to prevent parameter duplication
+      const { data: updatedProfile, error } = await this.supabase
+        .from('profiles')
         .update(updates)
-        .eq('id', session.session.user.id)
-        .select()
+        .eq('id', userId)
+        .select('*')
         .single();
 
       if (error) throw error;
-      return { data, error: null };
+
+      console.debug('Profile updated successfully:', {
+        userId: session.session.user.id,
+        profileId: updatedProfile.id,
+      });
+
+      // If the profile has an organization_id, fetch the organization separately
+      if (updatedProfile.organization_id) {
+        try {
+          // Use a direct query approach to prevent parameter duplication
+          const { data: organization, error: orgError } = await this.supabase
+            .from('organizations')
+            .select('*')
+            .eq('id', updatedProfile.organization_id)
+            .single();
+
+          if (orgError) {
+            // Check if it's a "not found" error
+            if (
+              orgError.code === 'PGRST116' ||
+              orgError.message?.includes('No rows found') ||
+              orgError.message?.includes('not found')
+            ) {
+              console.warn(
+                'Organization not found after profile update:',
+                updatedProfile.organization_id
+              );
+            } else {
+              console.warn('Error fetching organization after profile update:', {
+                error: orgError,
+                organizationId: updatedProfile.organization_id,
+              });
+            }
+            // Continue without the organization data
+          } else if (organization) {
+            // Manually add the organization to the profile
+            updatedProfile.organization = organization;
+          }
+        } catch (orgFetchError) {
+          console.warn('Exception fetching organization after profile update:', orgFetchError);
+          // Continue without the organization data
+        }
+      }
+
+      return { data: updatedProfile, error: null };
     } catch (error) {
       const err = this.handleError(error, {
         context: 'UserService',
-        operation: 'updateProfile'
+        operation: 'updateProfile',
       });
       return { data: null, error: err };
     }
