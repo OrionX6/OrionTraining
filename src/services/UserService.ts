@@ -15,6 +15,87 @@ export class UserService extends BaseService<'profiles'> {
     super('profiles');
   }
 
+  async uploadAvatar(file: File, userId: string): Promise<ServiceResult<string>> {
+    try {
+      // Validate file
+      if (!file.type.startsWith('image/')) {
+        throw new Error('Please upload an image file');
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        throw new Error('File size must be under 2MB');
+      }
+
+      // Generate file path
+      const fileExt = file.name.split('.').pop();
+      if (!fileExt) {
+        throw new Error('Invalid file extension');
+      }
+
+      const filePath = `${userId}/${Date.now()}.${fileExt}`;
+
+      // Upload file to avatars bucket
+      const { error: uploadError } = await this.supabase.storage
+        .from('avatars')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+      if (uploadError) {
+        // Check for specific storage errors
+        if (uploadError.message.includes('Permission')) {
+          throw new Error('You do not have permission to upload files');
+        }
+        if (uploadError.message.includes('Bucket')) {
+          throw new Error('Storage system is not properly configured');
+        }
+        throw new Error('Failed to upload file: ' + uploadError.message);
+      }
+
+      // Get public URL
+      const {
+        data: { publicUrl },
+      } = this.supabase.storage.from('avatars').getPublicUrl(filePath);
+
+      if (!publicUrl) {
+        throw new Error('Failed to get public URL for uploaded file');
+      }
+
+      return { data: publicUrl, error: null };
+    } catch (error) {
+      const err = this.handleError(error, {
+        context: 'UserService',
+        operation: 'uploadAvatar',
+      });
+      return { data: null, error: err };
+    }
+  }
+
+  async deleteAvatar(filePath: string): Promise<ServiceResult<void>> {
+    try {
+      const { error } = await this.supabase.storage.from('avatars').remove([filePath]);
+
+      if (error) {
+        // Check for specific storage errors
+        if (error.message.includes('Permission')) {
+          throw new Error('You do not have permission to delete this file');
+        }
+        if (error.message.includes('Bucket')) {
+          throw new Error('Storage system is not properly configured');
+        }
+        throw new Error('Failed to delete file: ' + error.message);
+      }
+
+      return { data: undefined, error: null };
+    } catch (error) {
+      const err = this.handleError(error, {
+        context: 'UserService',
+        operation: 'deleteAvatar',
+      });
+      return { data: null, error: err };
+    }
+  }
+
   async getCurrentUser(): Promise<ServiceResult<Profile>> {
     try {
       const { data: session } = await this.supabase.auth.getSession();

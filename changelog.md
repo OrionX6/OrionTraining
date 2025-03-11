@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.0] - 2025-03-11
+
+### Added
+
+- Profile editing functionality with avatar upload
+- New EditProfile page with form validation
+- Avatar upload component with image preview
+- Storage setup for user avatars
+- Improved error handling for file uploads
+- Loading states and success messages in forms
+
+### Fixed
+
+- Profile menu display during authentication
+- Storage bucket configuration
+- Race conditions in profile loading
+
 ## [Unreleased]
 
 ### Database and Authentication Fixes (March 11, 2025)

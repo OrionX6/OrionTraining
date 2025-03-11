@@ -9,6 +9,7 @@ import {
   Typography,
   Divider,
   Tooltip,
+  CircularProgress,
 } from '@mui/material';
 import {
   AccountCircle as AccountCircleIcon,
@@ -26,7 +27,10 @@ export default function UserMenu() {
   const navigation = useNavigation();
   const { trackError, startOperation } = useMonitoring('UserMenu');
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
+
+  const isLoading = auth.loading;
   const profile = auth.profile as Profile | null;
+  const email = profile?.email || auth.user?.email;
 
   const handleMenu = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -61,19 +65,16 @@ export default function UserMenu() {
     }
   };
 
-  // Only render menu if we have a profile
-  if (!profile) {
+  // Only render menu if authenticated
+  if (!auth.isAuthenticated) {
     return null;
   }
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
       {/* User info */}
-      <Typography 
-        variant="body2" 
-        sx={{ mr: 2, display: { xs: 'none', sm: 'block' } }}
-      >
-        {profile.email}
+      <Typography variant="body2" sx={{ mr: 2, display: { xs: 'none', sm: 'block' } }}>
+        {isLoading ? '...' : email}
       </Typography>
 
       {/* Menu trigger */}
@@ -85,11 +86,15 @@ export default function UserMenu() {
           onClick={handleMenu}
           color="inherit"
         >
-          <Avatar 
-            sx={{ width: 32, height: 32 }}
-            src={profile.avatar_url || undefined}
+          <Avatar
+            sx={{
+              width: 32,
+              height: 32,
+              bgcolor: isLoading ? 'action.disabled' : undefined,
+            }}
+            src={!isLoading ? profile?.avatar_url || undefined : undefined}
           >
-            <AccountCircleIcon />
+            {isLoading ? <CircularProgress size={20} /> : <AccountCircleIcon />}
           </Avatar>
         </IconButton>
       </Tooltip>
@@ -113,9 +118,9 @@ export default function UserMenu() {
         {/* Profile section */}
         <Box sx={{ px: 2, py: 1 }}>
           <Typography variant="subtitle2" noWrap>
-            {profile.email}
+            {isLoading ? '...' : email}
           </Typography>
-          {profile.organization && (
+          {!isLoading && profile?.organization && (
             <Typography variant="caption" color="text.secondary" noWrap>
               {profile.organization.name}
             </Typography>
@@ -133,21 +138,22 @@ export default function UserMenu() {
         </MenuItem>
 
         {/* Admin section */}
-        {profile.role === 'admin' && [
-          <Divider key="admin-divider" />,
-          <MenuItem key="admin-panel" onClick={() => navigation.goTo('ADMIN')}>
-            <ListItemIcon>
-              <AdminIcon fontSize="small" />
-            </ListItemIcon>
-            Admin Panel
-          </MenuItem>,
-          <MenuItem key="settings" onClick={() => navigation.goTo('SETTINGS')}>
-            <ListItemIcon>
-              <SettingsIcon fontSize="small" />
-            </ListItemIcon>
-            Settings
-          </MenuItem>
-        ]}
+        {!isLoading &&
+          profile?.role === 'admin' && [
+            <Divider key="admin-divider" />,
+            <MenuItem key="admin-panel" onClick={() => navigation.goTo('ADMIN')}>
+              <ListItemIcon>
+                <AdminIcon fontSize="small" />
+              </ListItemIcon>
+              Admin Panel
+            </MenuItem>,
+            <MenuItem key="settings" onClick={() => navigation.goTo('SETTINGS')}>
+              <ListItemIcon>
+                <SettingsIcon fontSize="small" />
+              </ListItemIcon>
+              Settings
+            </MenuItem>,
+          ]}
 
         <Divider />
 

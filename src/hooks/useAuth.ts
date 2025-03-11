@@ -13,7 +13,7 @@ import {
   getUserFromCache,
   getProfileFromCache,
   clearAuthCache,
-  isCacheValid
+  isCacheValid,
 } from '../utils/authCache';
 
 interface AuthState {
@@ -33,142 +33,147 @@ interface SignUpOptions {
 
 export function useAuth() {
   const userService = useUserService();
-  
+
   // Initialize state from cache if available
   const cachedSession = getSessionFromCache();
   const cachedUser = getUserFromCache();
   const cachedProfile = getProfileFromCache();
   const hasCachedAuth = !!(isCacheValid() && cachedSession && cachedUser);
-  
+
   const [state, setState] = useState<AuthState>({
     session: cachedSession,
     user: cachedUser,
     profile: cachedProfile,
-    isLoading: !hasCachedAuth, // Don't show loading if we have cached data
-    isInitialized: hasCachedAuth, // Consider initialized if we have cached data
+    isLoading: !hasCachedAuth || (hasCachedAuth && !cachedProfile), // Show loading if no profile
+    isInitialized: hasCachedAuth && !!cachedProfile, // Only initialized with complete data
     error: null,
   });
-  
+
   // Flag to track if we're loading in the background
   const isLoadingInBackground = useRef(false);
 
   // Debounce timer for profile loading
   const profileLoadingTimer = useRef<NodeJS.Timeout | null>(null);
-  
+
   // Load profile data with timeout
-  const loadProfile = useCallback(async (user: User, showLoading = true) => {
-    // Prevent multiple simultaneous profile loading attempts
-    if (isLoadingInBackground.current) {
-      console.log('Profile loading already in progress, skipping');
-      return;
-    }
-    
-    // Set loading state if needed
-    if (showLoading) {
-      setState(current => ({ ...current, isLoading: true }));
-    } else {
-      isLoadingInBackground.current = true;
-    }
-    
-    const endMark = monitoring.startMetric('load_user_profile');
-    
-    // Create a promise that rejects after a timeout
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      const timeoutId = setTimeout(() => {
-        reject(new Error('Profile loading timed out'));
-      }, 5000); // 5 second timeout
-      
-      // Clean up the timeout if the promise is resolved before the timeout
-      return () => clearTimeout(timeoutId);
-    });
-    
-    try {
-      // Race the profile loading against the timeout
-      const { data: profile, error } = await Promise.race([
-        userService.getCurrentUser(),
-        timeoutPromise
-      ]) as { data: Profile | null, error: Error | null };
-      
-      if (error) {
-        // If we get a "not found" error, it might be because the profile doesn't exist yet
-        // This can happen during the registration process
-        if (error.message && (
-            error.message.includes('No rows found') || 
-            error.message.includes('not found')
-        )) {
-          console.log('Profile not found, user may be in registration process');
-          setState(current => ({
-            ...current,
-            profile: null,
-            error: null, // Don't treat this as an error
-            isLoading: false,
-            isInitialized: true
-          }));
-          return;
+  const loadProfile = useCallback(
+    async (user: User, showLoading = true) => {
+      // Prevent multiple simultaneous profile loading attempts
+      if (isLoadingInBackground.current) {
+        console.log('Profile loading already in progress, skipping');
+        return;
+      }
+
+      // Set loading state if needed
+      if (showLoading) {
+        setState((current) => ({ ...current, isLoading: true }));
+      } else {
+        isLoadingInBackground.current = true;
+      }
+
+      const endMark = monitoring.startMetric('load_user_profile');
+
+      // Create a promise that rejects after a timeout
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        const timeoutId = setTimeout(() => {
+          reject(new Error('Profile loading timed out'));
+        }, 5000); // 5 second timeout
+
+        // Clean up the timeout if the promise is resolved before the timeout
+        return () => clearTimeout(timeoutId);
+      });
+
+      try {
+        // Race the profile loading against the timeout
+        const { data: profile, error } = (await Promise.race([
+          userService.getCurrentUser(),
+          timeoutPromise,
+        ])) as { data: Profile | null; error: Error | null };
+
+        if (error) {
+          // If we get a "not found" error, it might be because the profile doesn't exist yet
+          // This can happen during the registration process
+          if (
+            error.message &&
+            (error.message.includes('No rows found') || error.message.includes('not found'))
+          ) {
+            console.log('Profile not found, user may be in registration process');
+            setState((current) => ({
+              ...current,
+              profile: null,
+              error: null, // Don't treat this as an error
+              isLoading: false,
+              isInitialized: true,
+            }));
+            return;
+          }
+
+          throw error;
         }
-        
-        throw error;
+
+        // Update state with the profile
+        setState((current) => ({
+          ...current,
+          profile,
+          error: null,
+          isLoading: false,
+          isInitialized: true,
+        }));
+
+        // Cache the profile
+        saveProfileToCache(profile);
+
+        // If we have a session and user, cache them too
+        if (state.session && state.user) {
+          saveSessionToCache(state.session);
+          saveUserToCache(state.user);
+        }
+      } catch (error) {
+        console.error('Failed to load profile:', error);
+
+        // If it's a timeout error, we still want to initialize the app
+        // but mark that we couldn't load the profile
+        const isTimeout = error instanceof Error && error.message === 'Profile loading timed out';
+
+        setState((current) => ({
+          ...current,
+          profile: null,
+          error: error as Error,
+          isLoading: false,
+          isInitialized: true, // Always mark as initialized even on error
+        }));
+
+        // Log the timeout specifically
+        if (isTimeout) {
+          monitoring.captureError(error as Error, {
+            context: 'useAuth_loadProfile_timeout',
+            userId: user.id,
+            email: user.email,
+          });
+        }
+      } finally {
+        endMark();
+        isLoadingInBackground.current = false;
       }
-      
-      // Update state with the profile
-      setState(current => ({
-        ...current,
-        profile,
-        error: null,
-        isLoading: false,
-        isInitialized: true
-      }));
-      
-      // Cache the profile
-      saveProfileToCache(profile);
-      
-      // If we have a session and user, cache them too
-      if (state.session && state.user) {
-        saveSessionToCache(state.session);
-        saveUserToCache(state.user);
-      }
-    } catch (error) {
-      console.error('Failed to load profile:', error);
-      
-      // If it's a timeout error, we still want to initialize the app
-      // but mark that we couldn't load the profile
-      const isTimeout = error instanceof Error && 
-                        error.message === 'Profile loading timed out';
-      
-      setState(current => ({
-        ...current,
-        profile: null,
-        error: error as Error,
-        isLoading: false,
-        isInitialized: true // Always mark as initialized even on error
-      }));
-      
-      // Log the timeout specifically
-      if (isTimeout) {
-        monitoring.captureError(error as Error, {
-          context: 'useAuth_loadProfile_timeout',
-          userId: user.id,
-          email: user.email
-        });
-      }
-    } finally {
-      endMark();
-      isLoadingInBackground.current = false;
-    }
-  }, [userService, state.session, state.user]);
-  
+    },
+    [userService, state.session, state.user]
+  );
+
   // Background refresh of profile
-  const refreshProfileInBackground = useCallback((user: User) => {
-    // Clear any existing timer
-    if (profileLoadingTimer.current) {
-      clearTimeout(profileLoadingTimer.current);
-    }
-    
-    // Set a new timer to debounce multiple calls
-    profileLoadingTimer.current = setTimeout(() => {
-      loadProfile(user, false); // Load without showing loading state
-    }, 300);
-  }, [loadProfile]);
+  const refreshProfileInBackground = useCallback(
+    (user: User) => {
+      // Clear any existing timer
+      if (profileLoadingTimer.current) {
+        clearTimeout(profileLoadingTimer.current);
+      }
+
+      // Set a new timer to debounce multiple calls
+      profileLoadingTimer.current = setTimeout(() => {
+        loadProfile(user, false); // Load without showing loading state
+      }, 300);
+    },
+    [loadProfile]
+  );
 
   // Auth methods
   const signIn = useCallback(async (email: string, password: string) => {
@@ -201,10 +206,10 @@ export function useAuth() {
         password,
         options: {
           emailRedirectTo: redirectUrl,
-          data: metadata
-        }
+          data: metadata,
+        },
       });
-      
+
       if (error) throw error;
       return { data, error: null };
     } catch (error) {
@@ -220,10 +225,10 @@ export function useAuth() {
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
-      
+
       // Clear the auth cache
       clearAuthCache();
-      
+
       setState({
         session: null,
         user: null,
@@ -234,7 +239,7 @@ export function useAuth() {
       });
     } catch (error) {
       console.error('Sign out failed:', error);
-      setState(current => ({
+      setState((current) => ({
         ...current,
         error: error as Error,
       }));
@@ -243,91 +248,94 @@ export function useAuth() {
     }
   }, []);
 
-  const refreshProfile = useCallback(async (showLoading = true) => {
-    if (!state.user) {
-      console.warn('Cannot refresh profile: No user logged in');
-      return;
-    }
-    
-    if (showLoading) {
-      setState(current => ({ ...current, isLoading: true }));
-      await loadProfile(state.user, true);
-    } else {
-      // Use the background refresh mechanism
-      refreshProfileInBackground(state.user);
-    }
-  }, [state.user, loadProfile, refreshProfileInBackground]);
+  const refreshProfile = useCallback(
+    async (showLoading = true) => {
+      if (!state.user) {
+        console.warn('Cannot refresh profile: No user logged in');
+        return;
+      }
+
+      if (showLoading) {
+        setState((current) => ({ ...current, isLoading: true }));
+        await loadProfile(state.user, true);
+      } else {
+        // Use the background refresh mechanism
+        refreshProfileInBackground(state.user);
+      }
+    },
+    [state.user, loadProfile, refreshProfileInBackground]
+  );
 
   // Flag to prevent multiple initializations
   const isInitializing = useRef<boolean>(true);
-  
+
   // Track last visibility change time to prevent too frequent refreshes
   const lastVisibilityChange = useRef<number>(0);
-  
+
   // Initialize auth state
   useEffect(() => {
     if (!isInitializing.current) {
       return;
     }
-    
+
     isInitializing.current = false;
     const endMark = monitoring.startMetric('auth_initialization');
-    
+
     // Get initial session with timeout
     const initAuth = async () => {
       // If we have cached auth data, we can skip the loading state
       if (hasCachedAuth) {
         console.log('Using cached auth data for initial render');
-        
+
         // Still fetch the latest data in the background, but only once
         if (cachedUser && !isLoadingInBackground.current) {
           refreshProfileInBackground(cachedUser);
         }
-        
+
         return;
       }
-      
+
       // Create a promise that rejects after a timeout
       const timeoutPromise = new Promise<never>((_, reject) => {
         const timeoutId = setTimeout(() => {
           reject(new Error('Auth initialization timed out'));
         }, 8000); // 8 second timeout
-        
+
         // Clean up the timeout if the promise is resolved before the timeout
         return () => clearTimeout(timeoutId);
       });
-      
+
       try {
         // Race the session loading against the timeout
-        const { data, error } = await Promise.race([
+        const { data, error } = (await Promise.race([
           supabase.auth.getSession(),
-          timeoutPromise
-        ]) as { data: { session: Session | null }, error: Error | null };
-        
+          timeoutPromise,
+        ])) as { data: { session: Session | null }; error: Error | null };
+
         if (error) throw error;
-        
+
         const session = data.session;
         if (session?.user) {
           // Update state with session and user
-          setState(current => ({
+          setState((current) => ({
             ...current,
             session,
             user: session.user,
             isLoading: true,
             isInitialized: false,
           }));
-          
+
           // Cache session and user
           saveSessionToCache(session);
           saveUserToCache(session.user);
-          
+
           // Load profile
           await loadProfile(session.user);
         } else {
           // No session, clear cache and update state
           clearAuthCache();
-          
-          setState(current => ({
+
+          setState((current) => ({
             ...current,
             isLoading: false,
             isInitialized: true,
@@ -335,20 +343,20 @@ export function useAuth() {
         }
       } catch (error) {
         console.error('Failed to get initial session:', error);
-        
+
         // If it's a timeout error, we want to log it specifically
-        const isTimeout = error instanceof Error && 
-                          error.message === 'Auth initialization timed out';
-        
+        const isTimeout =
+          error instanceof Error && error.message === 'Auth initialization timed out';
+
         if (isTimeout) {
           console.warn('Auth initialization timed out, continuing without session');
           monitoring.captureError(error as Error, {
-            context: 'useAuth_initAuth_timeout'
+            context: 'useAuth_initAuth_timeout',
           });
         }
-        
+
         // Always mark as initialized on error to prevent infinite loading
-        setState(current => ({
+        setState((current) => ({
           ...current,
           error: error as Error,
           isLoading: false,
@@ -358,60 +366,63 @@ export function useAuth() {
     };
 
     initAuth();
-    
+
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.debug('Auth state changed:', event, session ? 'session exists' : 'no session');
-        
-        if (session?.user) {
-          // Update state with session and user
-          setState(current => ({
-            ...current,
-            session,
-            user: session.user,
-            isLoading: !hasCachedAuth, // Don't show loading if we have cached data
-            isInitialized: hasCachedAuth, // Consider initialized if we have cached data
-          }));
-          
-          // Cache session and user
-          saveSessionToCache(session);
-          saveUserToCache(session.user);
-          
-          // Load profile (with or without loading state)
-          if (hasCachedAuth) {
-            refreshProfileInBackground(session.user);
-          } else {
-            await loadProfile(session.user);
-          }
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.debug('Auth state changed:', event, session ? 'session exists' : 'no session');
+
+      if (session?.user) {
+        // Update state with session and user
+        setState((current) => ({
+          ...current,
+          session,
+          user: session.user,
+          isLoading: !hasCachedAuth, // Don't show loading if we have cached data
+          isInitialized: hasCachedAuth, // Consider initialized if we have cached data
+        }));
+
+        // Cache session and user
+        saveSessionToCache(session);
+        saveUserToCache(session.user);
+
+        // Always load profile, but decide on loading state
+        if (!hasCachedAuth) {
+          await loadProfile(session.user);
         } else {
-          // No session, clear cache and update state
-          clearAuthCache();
-          
-          setState({
-            session: null,
-            user: null,
-            profile: null,
-            isLoading: false,
-            isInitialized: true,
-            error: null,
-          });
+          refreshProfileInBackground(session.user);
         }
+      } else {
+        // No session, clear cache and update state
+        clearAuthCache();
+
+        setState({
+          session: null,
+          user: null,
+          profile: null,
+          isLoading: false,
+          isInitialized: true,
+          error: null,
+        });
       }
-    );
-    
+    });
+
     // Listen for visibility changes to refresh the profile when the user returns to the tab
     const handleVisibilityChange = () => {
       const now = Date.now();
       // Only refresh if it's been at least 5 seconds since the last refresh
-      if (document.visibilityState === 'visible' && state.user && 
-          (now - lastVisibilityChange.current > 5000)) {
+      if (
+        document.visibilityState === 'visible' &&
+        state.user &&
+        now - lastVisibilityChange.current > 5000
+      ) {
         console.log('Tab became visible, refreshing profile in background');
         lastVisibilityChange.current = now;
         refreshProfileInBackground(state.user);
       }
     };
-    
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     endMark();
@@ -420,7 +431,7 @@ export function useAuth() {
     return () => {
       subscription.unsubscribe();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      
+
       // Clear any pending timers
       if (profileLoadingTimer.current) {
         clearTimeout(profileLoadingTimer.current);

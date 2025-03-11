@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, CssBaseline, Stack } from '@mui/material';
+import { Box, CssBaseline, Stack, LinearProgress } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useMonitoring } from '../hooks/useMonitoring';
 import { useAuth } from '../contexts/AuthContext';
@@ -21,7 +21,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
     trackError(error, {
       context: 'MainLayout',
       isAuthenticated: auth.isAuthenticated,
-      hasProfile: !!auth.profile
+      hasProfile: !!auth.profile,
     });
   };
 
@@ -35,20 +35,42 @@ export default function MainLayout({ children }: MainLayoutProps) {
         sx={{
           flex: 1,
           width: '100%',
-          backgroundColor: theme.palette.background.default
+          backgroundColor: theme.palette.background.default,
         }}
       >
-        {/* User menu for authenticated users */}
-        {auth.isAuthenticated && (
-          <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-            <UserMenu />
-          </Box>
-        )}
+        {/* Header area */}
+        <Box
+          sx={{
+            position: 'relative',
+            borderBottom: 1,
+            borderColor: 'divider',
+            minHeight: 64, // Match toolbar height
+          }}
+        >
+          {/* Loading indicator */}
+          {auth.loading && (
+            <LinearProgress
+              sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 2,
+                zIndex: 1,
+              }}
+            />
+          )}
+
+          {/* Show user menu if authenticated or loading */}
+          {(auth.isAuthenticated || auth.loading) && (
+            <Box sx={{ p: 2 }}>
+              <UserMenu />
+            </Box>
+          )}
+        </Box>
 
         {/* Page content */}
-        <Box sx={{ flex: 1, p: 3 }}>
-          {children}
-        </Box>
+        <Box sx={{ flex: 1, p: 3 }}>{children}</Box>
 
         {/* Footer */}
         <Box
@@ -59,7 +81,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
             mt: 'auto',
             backgroundColor: theme.palette.background.paper,
             borderTop: 1,
-            borderColor: 'divider'
+            borderColor: 'divider',
           }}
         >
           <Stack direction="row" justifyContent="center" spacing={2}>

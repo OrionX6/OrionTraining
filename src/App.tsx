@@ -42,6 +42,7 @@ const VerifyEmail = React.lazy(() => import('./pages/VerifyEmail'));
 const VerifyConfirmation = React.lazy(() => import('./pages/VerifyConfirmation'));
 const VerifySuccess = React.lazy(() => import('./pages/VerifySuccess'));
 const Profile = React.lazy(() => import('./pages/Profile'));
+const EditProfile = React.lazy(() => import('./pages/EditProfile'));
 const Terms = React.lazy(() => import('./pages/Terms'));
 const Privacy = React.lazy(() => import('./pages/Privacy'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
@@ -49,8 +50,8 @@ const NotFound = React.lazy(() => import('./pages/NotFound'));
 export default function App() {
   const auth = useAuth();
   const location = useLocation();
-  const { trackNavigation, trackError } = useMonitoring('App', { 
-    autoTrackRender: false 
+  const { trackNavigation, trackError } = useMonitoring('App', {
+    autoTrackRender: false,
   });
 
   // Track route changes
@@ -58,7 +59,7 @@ export default function App() {
     trackNavigation(location.pathname, {
       search: location.search,
       hash: location.hash,
-      state: location.state
+      state: location.state,
     });
   }, [location, trackNavigation]);
 
@@ -70,14 +71,14 @@ export default function App() {
         message: event.message,
         filename: event.filename,
         lineno: event.lineno,
-        colno: event.colno
+        colno: event.colno,
       });
     };
 
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       trackError(event.reason, {
         type: 'unhandled_rejection',
-        message: event.reason?.message || String(event.reason)
+        message: event.reason?.message || String(event.reason),
       });
     };
 
@@ -92,27 +93,27 @@ export default function App() {
 
   // Add a timeout for auth initialization to prevent infinite loading
   const [forceInitialized, setForceInitialized] = React.useState(false);
-  
+
   useEffect(() => {
     // If auth is already initialized, we don't need the timeout
     if (auth.isInitialized) {
       return;
     }
-    
+
     // Set a timeout to force initialization after 10 seconds
     const timeoutId = setTimeout(() => {
       console.warn('Auth initialization timed out, forcing application to load');
       monitoring.captureError(new Error('Auth initialization timeout'), {
         context: 'App',
         isAuthenticated: auth.isAuthenticated,
-        hasError: !!auth.error
+        hasError: !!auth.error,
       });
       setForceInitialized(true);
     }, 10000); // 10 seconds timeout
-    
+
     return () => clearTimeout(timeoutId);
   }, [auth.isInitialized, auth.isAuthenticated, auth.error]);
-  
+
   // Show loading screen while auth is initializing
   if (!auth.isInitialized && !forceInitialized) {
     return <LoadingScreen message="Loading application..." />;
@@ -123,7 +124,7 @@ export default function App() {
       onError={(error, errorInfo) => {
         monitoring.captureError(error, {
           context: 'AppRoot',
-          componentStack: errorInfo.componentStack
+          componentStack: errorInfo.componentStack,
         });
       }}
     >
@@ -133,7 +134,10 @@ export default function App() {
           <Route path="/login" element={withErrorBoundaryAndSuspense(Login)} />
           <Route path="/register" element={withErrorBoundaryAndSuspense(Register)} />
           <Route path="/verify-email" element={withErrorBoundaryAndSuspense(VerifyEmail)} />
-          <Route path="/verify-confirmation" element={withErrorBoundaryAndSuspense(VerifyConfirmation)} />
+          <Route
+            path="/verify-confirmation"
+            element={withErrorBoundaryAndSuspense(VerifyConfirmation)}
+          />
           <Route path="/verify-success" element={withErrorBoundaryAndSuspense(VerifySuccess)} />
           <Route path="/terms" element={withErrorBoundaryAndSuspense(Terms)} />
           <Route path="/privacy" element={withErrorBoundaryAndSuspense(Privacy)} />
@@ -141,6 +145,7 @@ export default function App() {
 
           {/* Protected Routes */}
           <Route path="/profile" element={withErrorBoundaryAndSuspense(Profile, true)} />
+          <Route path="/profile/edit" element={withErrorBoundaryAndSuspense(EditProfile, true)} />
 
           {/* Protected Home Route */}
           <Route path="/" element={withErrorBoundaryAndSuspense(Home, true)} />
