@@ -1,11 +1,17 @@
 import React, { createContext, useContext } from 'react';
-import { userService, quizService, studyMaterialService } from '../services';
-import type { UserService, QuizService, StudyMaterialService } from '../services';
+import { userService, quizService, studyMaterialService, organizationService } from '../services';
+import type {
+  UserService,
+  QuizService,
+  StudyMaterialService,
+  OrganizationService,
+} from '../services';
 
 export interface ServiceContextType {
   userService: UserService;
   quizService: QuizService;
   studyMaterialService: StudyMaterialService;
+  organizationService: OrganizationService;
 }
 
 const ServiceContext = createContext<ServiceContextType | null>(null);
@@ -19,13 +25,10 @@ export function ServiceProvider({ children }: ServiceProviderProps) {
     userService,
     quizService,
     studyMaterialService,
+    organizationService,
   };
 
-  return (
-    <ServiceContext.Provider value={services}>
-      {children}
-    </ServiceContext.Provider>
-  );
+  return <ServiceContext.Provider value={services}>{children}</ServiceContext.Provider>;
 }
 
 // Hooks to access individual services
@@ -51,6 +54,14 @@ export function useStudyMaterialService(): StudyMaterialService {
     throw new Error('useStudyMaterialService must be used within a ServiceProvider');
   }
   return context.studyMaterialService;
+}
+
+export function useOrganizationService(): OrganizationService {
+  const context = useContext(ServiceContext);
+  if (!context) {
+    throw new Error('useOrganizationService must be used within a ServiceProvider');
+  }
+  return context.organizationService;
 }
 
 // Combined hook for accessing all services

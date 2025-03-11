@@ -1,11 +1,14 @@
 import React from 'react';
-import { Box, Container, Button, Typography, Paper, Avatar, Skeleton } from '@mui/material';
+import { Box, Container, Button, Typography, Paper, Avatar, Skeleton, Stack } from '@mui/material';
 import { useRequireAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { useNavigation } from '../hooks/useNavigation';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
 export default function Profile() {
   const auth = useRequireAuth();
   const navigate = useNavigate();
+  const navigation = useNavigation();
 
   if (!auth.profile) {
     return (
@@ -22,7 +25,17 @@ export default function Profile() {
 
   return (
     <Container maxWidth="sm">
-      <Paper sx={{ mt: 4, p: 4 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-start', mt: 2 }}>
+        <Button
+          startIcon={<ArrowBackIcon />}
+          onClick={() => navigation.goTo('HOME')}
+          variant="text"
+          color="primary"
+        >
+          Back to Home
+        </Button>
+      </Box>
+      <Paper sx={{ mt: 2, p: 4 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 4 }}>
           <Avatar
             src={auth.profile.avatar_url || undefined}

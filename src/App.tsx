@@ -43,6 +43,7 @@ const VerifyConfirmation = React.lazy(() => import('./pages/VerifyConfirmation')
 const VerifySuccess = React.lazy(() => import('./pages/VerifySuccess'));
 const Profile = React.lazy(() => import('./pages/Profile'));
 const EditProfile = React.lazy(() => import('./pages/EditProfile'));
+const OrganizationSettings = React.lazy(() => import('./pages/OrganizationSettings'));
 const Terms = React.lazy(() => import('./pages/Terms'));
 const Privacy = React.lazy(() => import('./pages/Privacy'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
@@ -146,6 +147,10 @@ export default function App() {
           {/* Protected Routes */}
           <Route path="/profile" element={withErrorBoundaryAndSuspense(Profile, true)} />
           <Route path="/profile/edit" element={withErrorBoundaryAndSuspense(EditProfile, true)} />
+          <Route
+            path="/organization/settings"
+            element={withErrorBoundaryAndSuspense(OrganizationSettings, true)}
+          />
 
           {/* Protected Home Route */}
           <Route path="/" element={withErrorBoundaryAndSuspense(Home, true)} />

@@ -10,7 +10,8 @@ export const ROUTES = {
   PRIVACY: '/privacy',
   NOT_FOUND: '/not-found',
   ADMIN: '/admin',
-  SETTINGS: '/settings'
+  SETTINGS: '/settings',
+  ORGANIZATION_SETTINGS: '/organization/settings',
 } as const;
 
 export type RouteName = keyof typeof ROUTES;

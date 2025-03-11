@@ -19,6 +19,20 @@
 
 ## [Unreleased]
 
+### Organization Management (March 11, 2025)
+
+- ✅ Added: OrganizationService for managing organization operations
+- 🔄 Implemented CRUD operations for organizations
+- 🛠️ Added team management functionality (invite, remove, update roles)
+- 🔍 Integrated with existing service architecture
+- ✅ Added: Organization Settings page with tabbed interface
+- 🔄 Updated navigation to include organization settings link
+- 🛠️ Implemented Organization Profile component with form validation
+- 🔍 Added organization name editing functionality
+- 🐛 Fixed: Organization name now updates in all UI components when changed
+- ✅ Added: Organization name in main layout header for better visibility
+- 🔄 Improved navigation with home links on Profile and Organization pages
+
 ### Database and Authentication Fixes (March 11, 2025)
 
 - ✅ Fixed: Infinite recursion in database policies causing 500 errors

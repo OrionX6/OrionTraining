@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Box, CssBaseline, Stack, LinearProgress } from '@mui/material';
+import { Box, CssBaseline, Stack, LinearProgress, Typography, Button } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useMonitoring } from '../hooks/useMonitoring';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigation } from '../hooks/useNavigation';
 import UserMenu from '../components/UserMenu';
+import HomeIcon from '@mui/icons-material/Home';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -12,6 +14,7 @@ interface MainLayoutProps {
 export default function MainLayout({ children }: MainLayoutProps) {
   const theme = useTheme();
   const auth = useAuth();
+  const navigation = useNavigation();
   const { trackError } = useMonitoring('MainLayout');
   const [error, setError] = useState<Error | null>(null);
 
@@ -61,12 +64,46 @@ export default function MainLayout({ children }: MainLayoutProps) {
             />
           )}
 
-          {/* Show user menu if authenticated or loading */}
-          {(auth.isAuthenticated || auth.loading) && (
-            <Box sx={{ p: 2 }}>
-              <UserMenu />
+          {/* Header content with app name/logo, organization name, and user menu */}
+          <Box
+            sx={{
+              p: 2,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            {/* Left side: App name/logo and organization name */}
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <Button
+                startIcon={<HomeIcon />}
+                onClick={() => navigation.goTo('HOME')}
+                color="primary"
+                sx={{ mr: 2, textTransform: 'none' }}
+              >
+                Training Hub
+              </Button>
+
+              {auth.isAuthenticated && !auth.loading && auth.profile?.organization && (
+                <Typography
+                  variant="subtitle1"
+                  color="text.secondary"
+                  sx={{
+                    ml: 1,
+                    borderLeft: 1,
+                    borderColor: 'divider',
+                    pl: 2,
+                    display: { xs: 'none', sm: 'block' },
+                  }}
+                >
+                  {auth.profile.organization.name}
+                </Typography>
+              )}
             </Box>
-          )}
+
+            {/* Right side: User menu */}
+            {(auth.isAuthenticated || auth.loading) && <UserMenu />}
+          </Box>
         </Box>
 
         {/* Page content */}

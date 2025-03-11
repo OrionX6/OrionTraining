@@ -16,6 +16,7 @@ import {
   Logout as LogoutIcon,
   AdminPanelSettings as AdminIcon,
   Settings as SettingsIcon,
+  Business as BusinessIcon,
 } from '@mui/icons-material';
 import { useAuthContext } from '../contexts/AuthContext';
 import { useMonitoring } from '../hooks/useMonitoring';
@@ -152,6 +153,12 @@ export default function UserMenu() {
                 <SettingsIcon fontSize="small" />
               </ListItemIcon>
               Settings
+            </MenuItem>,
+            <MenuItem key="org-settings" onClick={() => navigation.goTo('ORGANIZATION_SETTINGS')}>
+              <ListItemIcon>
+                <BusinessIcon fontSize="small" />
+              </ListItemIcon>
+              Organization
             </MenuItem>,
           ]}
 
