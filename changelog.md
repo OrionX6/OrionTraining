@@ -19,6 +19,11 @@
 
 ## [Unreleased]
 
+### Organization Features (March 12, 2025)
+
+- 🚫 Email notifications for new users blocked pending domain setup for Resend integration
+- 📋 Identified requirement for domain verification to complete Resend-Supabase integration
+
 ### Database Migration Cleanup (March 12, 2025)
 
 - 🔄 Consolidated all SQL migrations into a single setup file

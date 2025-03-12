@@ -82,7 +82,7 @@
    - ✅ Add temporary password generation
    - ✅ Create force password change mechanism
    - ✅ Add RPC functions for secure user creation
-   - 🔄 Implement email notification for new users
+   - 🔄 Implement email notification for new users (blocked: awaiting domain setup for Resend integration)
 
    **Step 5: Pagination and Search**
 
