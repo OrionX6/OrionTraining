@@ -2,10 +2,19 @@ import { BaseService, ServiceResult } from './BaseService';
 import { Profile, RegistrationResult } from '../types/database';
 import { monitoring } from './MonitoringService';
 import { clearAuthCache } from '../utils/authCache';
+import { createClient } from '@supabase/supabase-js';
 
 interface PendingRegistration {
   email: string;
   organizationName: string;
+}
+
+interface CreateUserParams {
+  email: string;
+  password: string;
+  role: Profile['role'];
+  organizationId: string;
+  sendEmail?: boolean;
 }
 
 export class UserService extends BaseService<'profiles'> {
@@ -13,6 +22,135 @@ export class UserService extends BaseService<'profiles'> {
 
   constructor() {
     super('profiles');
+  }
+
+  /**
+   * Create a new user account with an organization role using standard Supabase auth
+   */
+  async createUser({
+    email,
+    password,
+    role,
+    organizationId,
+    sendEmail = false,
+  }: CreateUserParams): Promise<ServiceResult<{ userId: string; emailSent?: boolean }>> {
+    try {
+      // Get current user's ID to track who created the account
+      const { data: session } = await this.supabase.auth.getSession();
+      if (!session?.session?.user) {
+        throw new Error('Not authenticated');
+      }
+
+      // Step 1: Create the user using standard Supabase auth signup
+      const { data: authData, error: authError } = await this.supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: window.location.origin,
+        },
+      });
+
+      if (authError) throw authError;
+      if (!authData.user) throw new Error('Failed to create user');
+
+      const userId = authData.user.id;
+
+      // Step 2: Confirm the user's email (since we're creating from admin)
+      // This is needed because signUp doesn't automatically confirm the email
+      const supabaseAdmin = createClient(
+        process.env.REACT_APP_SUPABASE_URL || '',
+        process.env.REACT_APP_SUPABASE_SERVICE_KEY || ''
+      );
+
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+        email_confirm: true,
+      });
+
+      if (updateError) throw updateError;
+
+      // Step 3: Create profile for the user using RPC function
+      const { data: profileData, error: profileError } = await this.supabase.rpc(
+        'create_user_profile',
+        {
+          p_user_id: userId,
+          p_email: email,
+          p_role: role,
+          p_organization_id: organizationId,
+          p_created_by: session.session.user.id,
+        }
+      );
+
+      if (profileError) throw profileError;
+
+      // Track user creation for monitoring
+      monitoring.startMetric('user_created', {
+        role,
+        organizationId,
+        emailSent: sendEmail,
+      });
+
+      return {
+        data: {
+          userId,
+          emailSent: sendEmail,
+        },
+        error: null,
+      };
+    } catch (error) {
+      return {
+        data: null,
+        error: this.handleError(error, {
+          context: 'UserService.createUser',
+          email,
+          role,
+          organizationId,
+        }),
+      };
+    }
+  }
+
+  /**
+   * Check if the current user needs to change their password
+   */
+  async checkPasswordChangeRequired(): Promise<ServiceResult<boolean>> {
+    try {
+      const { data, error } = await this.supabase.rpc('check_password_change_required');
+      if (error) throw error;
+
+      return { data, error: null };
+    } catch (error) {
+      return {
+        data: false,
+        error: this.handleError(error, {
+          context: 'UserService.checkPasswordChangeRequired',
+        }),
+      };
+    }
+  }
+
+  /**
+   * Complete the password change process
+   */
+  async completePasswordChange(newPassword: string): Promise<ServiceResult<void>> {
+    try {
+      const { error } = await this.supabase.rpc('complete_password_change', {
+        p_new_password: newPassword,
+      });
+
+      if (error) throw error;
+
+      // Refresh session after password change
+      await this.supabase.auth.refreshSession();
+
+      return { data: undefined, error: null };
+    } catch (error) {
+      return {
+        data: null,
+        error: this.handleError(error, {
+          context: 'UserService.completePasswordChange',
+        }),
+      };
+    }
   }
 
   async uploadAvatar(file: File, userId: string): Promise<ServiceResult<string>> {

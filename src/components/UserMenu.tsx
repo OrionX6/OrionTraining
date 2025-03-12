@@ -116,17 +116,19 @@ export default function UserMenu() {
         open={Boolean(anchorEl)}
         onClose={handleClose}
       >
-        {/* Profile section */}
-        <Box sx={{ px: 2, py: 1 }}>
-          <Typography variant="subtitle2" noWrap>
-            {isLoading ? '...' : email}
-          </Typography>
-          {!isLoading && profile?.organization && (
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {profile.organization.name}
+        {/* Profile section - wrapped in MenuItem to avoid Fragment error */}
+        <MenuItem disableRipple disableTouchRipple sx={{ '&:hover': { bgcolor: 'transparent' } }}>
+          <Box sx={{ px: 1, py: 0.5, width: '100%' }}>
+            <Typography variant="subtitle2" noWrap>
+              {isLoading ? '...' : email}
             </Typography>
-          )}
-        </Box>
+            {!isLoading && profile?.organization && (
+              <Typography variant="caption" color="text.secondary" noWrap>
+                {profile.organization.name}
+              </Typography>
+            )}
+          </Box>
+        </MenuItem>
 
         <Divider />
 
@@ -139,28 +141,17 @@ export default function UserMenu() {
         </MenuItem>
 
         {/* Admin section */}
-        {!isLoading &&
-          profile?.role === 'admin' && [
-            <Divider key="admin-divider" />,
-            <MenuItem key="admin-panel" onClick={() => navigation.goTo('ADMIN')}>
-              <ListItemIcon>
-                <AdminIcon fontSize="small" />
-              </ListItemIcon>
-              Admin Panel
-            </MenuItem>,
-            <MenuItem key="settings" onClick={() => navigation.goTo('SETTINGS')}>
-              <ListItemIcon>
-                <SettingsIcon fontSize="small" />
-              </ListItemIcon>
-              Settings
-            </MenuItem>,
-            <MenuItem key="org-settings" onClick={() => navigation.goTo('ORGANIZATION_SETTINGS')}>
+        {!isLoading && profile?.role === 'admin' && (
+          <>
+            <Divider />
+            <MenuItem onClick={() => navigation.goTo('ORGANIZATION_SETTINGS')}>
               <ListItemIcon>
                 <BusinessIcon fontSize="small" />
               </ListItemIcon>
-              Organization
-            </MenuItem>,
-          ]}
+              Organization Settings
+            </MenuItem>
+          </>
+        )}
 
         <Divider />
 

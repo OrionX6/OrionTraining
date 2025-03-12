@@ -25,6 +25,15 @@ export abstract class BaseService<T extends TableName> {
   protected supabase: SupabaseClient<Database> = supabase;
   protected table = this.supabase.from(this.tableName);
 
+  protected getRequestOptions() {
+    return {
+      headers: {
+        Prefer: 'return=representation',
+        Accept: 'application/vnd.pgrst.object+json',
+      },
+    };
+  }
+
   constructor(protected tableName: T) {}
 
   protected async listRows(options?: {
@@ -37,9 +46,7 @@ export abstract class BaseService<T extends TableName> {
       const limit = options?.limit || 10;
       const offset = (page - 1) * limit;
 
-      let query = this.table
-        .select('*', { count: 'exact' })
-        .range(offset, offset + limit - 1);
+      let query = this.table.select('*', { count: 'exact' }).range(offset, offset + limit - 1);
 
       // Apply filters if provided
       if (options?.filters) {
@@ -57,7 +64,7 @@ export abstract class BaseService<T extends TableName> {
       return {
         data: data || [],
         count,
-        error: null
+        error: null,
       };
     } catch (error) {
       return {
@@ -65,18 +72,15 @@ export abstract class BaseService<T extends TableName> {
         count: null,
         error: this.handleError(error, {
           context: 'BaseService.listRows',
-          options
-        })
+          options,
+        }),
       };
     }
   }
 
   protected async getRawRow(id: string): Promise<ServiceResult<Row<T>>> {
     try {
-      const { data, error } = await this.table
-        .select('*')
-        .eq('id', id)
-        .single();
+      const { data, error } = await this.table.select('*').eq('id', id).single();
 
       if (error) throw error;
       return { data, error: null };
@@ -85,20 +89,15 @@ export abstract class BaseService<T extends TableName> {
         data: null,
         error: this.handleError(error, {
           context: 'BaseService.getRawRow',
-          id
-        })
+          id,
+        }),
       };
     }
   }
 
-  protected async insertRow(
-    row: Insert<T>
-  ): Promise<ServiceResult<Row<T>>> {
+  protected async insertRow(row: Insert<T>): Promise<ServiceResult<Row<T>>> {
     try {
-      const { data, error } = await this.table
-        .insert(row)
-        .select()
-        .single();
+      const { data, error } = await this.table.insert(row).select().single();
 
       if (error) throw error;
       return { data, error: null };
@@ -107,22 +106,15 @@ export abstract class BaseService<T extends TableName> {
         data: null,
         error: this.handleError(error, {
           context: 'BaseService.insertRow',
-          row
-        })
+          row,
+        }),
       };
     }
   }
 
-  protected async updateRow(
-    id: string,
-    updates: Update<T>
-  ): Promise<ServiceResult<Row<T>>> {
+  protected async updateRow(id: string, updates: Update<T>): Promise<ServiceResult<Row<T>>> {
     try {
-      const { data, error } = await this.table
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single();
+      const { data, error } = await this.table.update(updates).eq('id', id).select().single();
 
       if (error) throw error;
       return { data, error: null };
@@ -132,17 +124,15 @@ export abstract class BaseService<T extends TableName> {
         error: this.handleError(error, {
           context: 'BaseService.updateRow',
           id,
-          updates
-        })
+          updates,
+        }),
       };
     }
   }
 
   protected async deleteRow(id: string): Promise<ServiceResult<void>> {
     try {
-      const { error } = await this.table
-        .delete()
-        .eq('id', id);
+      const { error } = await this.table.delete().eq('id', id);
 
       if (error) throw error;
       return { data: undefined, error: null };
@@ -151,21 +141,21 @@ export abstract class BaseService<T extends TableName> {
         data: null,
         error: this.handleError(error, {
           context: 'BaseService.deleteRow',
-          id
-        })
+          id,
+        }),
       };
     }
   }
 
   protected handleError(error: unknown, context: Record<string, any>): Error {
     console.error(`Error in ${this.tableName}:`, error);
-    
+
     const finalError = error instanceof Error ? error : new Error(String(error));
-    
+
     monitoring.captureError(finalError, {
       ...context,
       table: this.tableName,
-      type: error instanceof AuthError ? 'auth' : 'database'
+      type: error instanceof AuthError ? 'auth' : 'database',
     });
 
     return finalError;

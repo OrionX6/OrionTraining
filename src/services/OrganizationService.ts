@@ -1,5 +1,5 @@
 import { BaseService, ServiceResult, ListResult } from './BaseService';
-import { Organization, Profile } from '../types/database';
+import { Organization, Profile, Invitation } from '../types/database';
 import { monitoring } from './MonitoringService';
 
 export class OrganizationService extends BaseService<'organizations'> {
@@ -16,7 +16,7 @@ export class OrganizationService extends BaseService<'organizations'> {
         .from('organizations')
         .select('*')
         .eq('id', id)
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
       return { data, error: null };
@@ -44,7 +44,7 @@ export class OrganizationService extends BaseService<'organizations'> {
         .update(updates)
         .eq('id', id)
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
       return { data, error: null };
@@ -232,52 +232,63 @@ export class OrganizationService extends BaseService<'organizations'> {
   }
 
   /**
-   * Invite user to organization (placeholder for future email invitation system)
-   * Currently just adds the user to the organization if they exist
+   * Send an invitation to join the organization
    */
   async inviteUserToOrganization(
     email: string,
     organizationId: string,
     role: Profile['role'] = 'user'
-  ): Promise<ServiceResult<void>> {
+  ): Promise<ServiceResult<{ token: string }>> {
     try {
-      // Check if user with this email exists
-      const { data: existingUser, error: userError } = await this.supabase
-        .from('profiles')
-        .select('id, organization_id')
-        .eq('email', email)
-        .single();
+      // Create invitation using RPC function
+      const { data: inviteResult, error } = (await this.supabase.rpc('create_invitation', {
+        p_email: email,
+        p_organization_id: organizationId,
+        p_role: role,
+      })) as {
+        data: {
+          success: boolean;
+          invitation: {
+            token: string;
+            email: string;
+            organization_id: string;
+            role: string;
+          };
+        };
+        error: any;
+      };
 
-      if (userError && !userError.message.includes('No rows found')) {
-        throw userError;
-      }
+      if (error) throw error;
 
-      if (!existingUser) {
-        throw new Error('User with this email does not exist');
-      }
+      if (!inviteResult?.success) throw new Error('Failed to create invitation');
 
-      if (existingUser.organization_id) {
-        throw new Error('User already belongs to an organization');
-      }
+      const { error: emailError } = await this.supabase.auth.signInWithOtp({
+        email,
+        options: {
+          data: {
+            invitation_token: inviteResult.invitation.token,
+            organization_id: organizationId,
+            role: role,
+            type: 'invite',
+          },
+          emailRedirectTo: `${window.location.origin}/join-organization?token=${inviteResult.invitation.token}`,
+        },
+      });
 
-      // Update the user's organization_id
-      const { error: updateError } = await this.supabase
-        .from('profiles')
-        .update({
-          organization_id: organizationId,
-          role,
-        })
-        .eq('id', existingUser.id);
+      if (emailError) throw emailError;
 
-      if (updateError) throw updateError;
-
-      // In a real implementation, you would send an email invitation here
+      // Track the invitation
       monitoring.startMetric('user_invited_to_organization', {
         email,
         organizationId,
       });
 
-      return { data: undefined, error: null };
+      return {
+        data: {
+          token: inviteResult.invitation.token,
+        },
+        error: null,
+      };
     } catch (error) {
       return {
         data: null,
@@ -285,6 +296,108 @@ export class OrganizationService extends BaseService<'organizations'> {
           context: 'OrganizationService.inviteUserToOrganization',
           email,
           organizationId,
+          role,
+        }),
+      };
+    }
+  }
+
+  /**
+   * Get pending invitations for an organization
+   */
+  async getPendingInvitations(organizationId: string): Promise<ServiceResult<any[]>> {
+    try {
+      const { data, error } = await this.supabase
+        .from('invitations')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      return { data: data || [], error: null };
+    } catch (error) {
+      return {
+        data: [],
+        error: this.handleError(error, {
+          context: 'OrganizationService.getPendingInvitations',
+          organizationId,
+        }),
+      };
+    }
+  }
+
+  /**
+   * Accept an invitation to join an organization
+   */
+  /**
+   * Check if an invitation token is valid
+   */
+  async checkInvitationToken(
+    token: string
+  ): Promise<ServiceResult<{ valid: boolean; invitation: Invitation | null }>> {
+    try {
+      const { data, error } = await this.supabase.rpc('check_invitation_token', {
+        p_token: token,
+      });
+
+      if (error) throw error;
+      return { data, error: null };
+    } catch (error) {
+      return {
+        data: { valid: false, invitation: null },
+        error: this.handleError(error, {
+          context: 'OrganizationService.checkInvitationToken',
+          token,
+        }),
+      };
+    }
+  }
+
+  /**
+   * Cancel a pending invitation
+   */
+  async cancelInvitation(invitationId: string): Promise<ServiceResult<void>> {
+    try {
+      const { error } = await this.supabase
+        .from('invitations')
+        .update({ status: 'cancelled' })
+        .eq('id', invitationId);
+
+      if (error) throw error;
+      return { data: undefined, error: null };
+    } catch (error) {
+      return {
+        data: null,
+        error: this.handleError(error, {
+          context: 'OrganizationService.cancelInvitation',
+          invitationId,
+        }),
+      };
+    }
+  }
+
+  /**
+   * Accept an invitation to join an organization
+   */
+  async acceptInvitation(token: string): Promise<ServiceResult<void>> {
+    try {
+      const { error } = await this.supabase.rpc('accept_invitation', {
+        p_token: token,
+      });
+
+      // Refresh authenticated session to reflect new organization membership
+      await this.supabase.auth.refreshSession();
+
+      if (error) throw error;
+
+      return { data: undefined, error: null };
+    } catch (error) {
+      return {
+        data: null,
+        error: this.handleError(error, {
+          context: 'OrganizationService.acceptInvitation',
+          token,
         }),
       };
     }

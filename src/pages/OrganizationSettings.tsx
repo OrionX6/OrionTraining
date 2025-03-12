@@ -18,14 +18,7 @@ import LoadingScreen from '../components/LoadingScreen';
 import OrganizationProfile from '../components/OrganizationProfile';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
-// This is a placeholder for the team management component that will be created in Step 4
-const TeamManagement = () => (
-  <Box p={2}>
-    <Typography variant="body1">
-      Team management component will be implemented in a future step.
-    </Typography>
-  </Box>
-);
+import TeamManagement from '../components/TeamManagement';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -194,7 +187,7 @@ export default function OrganizationSettings() {
         </TabPanel>
 
         <TabPanel value={tabValue} index={1}>
-          <TeamManagement />
+          <TeamManagement organizationId={organization.id} />
         </TabPanel>
       </Paper>
     </Container>

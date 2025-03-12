@@ -19,6 +19,42 @@
 
 ## [Unreleased]
 
+### Database Migration Cleanup (March 12, 2025)
+
+- 🔄 Consolidated all SQL migrations into a single setup file
+- 🧹 Cleaned up redundant migration files
+- 📦 Organized database setup into logical sections:
+  - Types and Enums
+  - Tables and Constraints
+  - Functions and Triggers
+  - Storage Setup
+  - Row Level Security
+  - Grants and Permissions
+  - Indices
+  - Initial Data
+- 🔍 Captured current database state for easier setup
+- 🛠️ Streamlined database initialization process
+
+### Added
+
+- Organization invitation system with email notifications
+  - New database schema for managing invitations
+  - Email template for invitation notifications
+  - Join organization flow for new members
+  - Admin interface for sending invitations
+- Direct user creation by administrators
+  - Admin-driven account creation flow
+  - Temporary password generation
+  - Force password change on first login
+  - RPC functions for secure user creation
+
+### Changed
+
+- Updated OrganizationService with invitation methods
+- Enhanced security policies for invitations
+- Improved user creation process with better error handling
+- Simplified authentication flow for admin-created users
+
 ### Organization Management (March 11, 2025)
 
 - ✅ Added: OrganizationService for managing organization operations
