@@ -1,4 +1,36 @@
-export type ProfileRole = 'user' | 'admin' | 'super_admin';
+export type ProfileRole = 'super_admin' | 'admin' | 'primary_admin' | 'secondary_admin' | 'user';
+
+// Type for registration response
+export interface RegistrationResult {
+  status: 'success';
+  user_id: string;
+  organization_id: string;
+  email: string;
+  organization_name: string;
+  role: ProfileRole;
+  created_at: string;
+}
+
+export type ContentScope = 'global' | 'regional';
+
+export interface Region {
+  id: string;
+  name: string;
+  description: string | null;
+  organization_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RegionAdmin {
+  id: string;
+  region_id: string;
+  user_id: string;
+  role: 'primary' | 'secondary';
+  reports_to: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface Organization {
   id: string;
@@ -20,22 +52,13 @@ export interface Invitation {
   status: 'pending' | 'accepted' | 'expired' | 'cancelled';
 }
 
-// Type for registration response
-export interface RegistrationResult {
-  status: 'success';
-  user_id: string;
-  organization_id: string;
-  email: string;
-  organization_name: string;
-  role: ProfileRole;
-  created_at: string;
-}
-
 export interface Profile {
   id: string;
   email: string;
   organization_id: string | null;
+  region_id: string | null;
   organization?: Organization;
+  region?: Region;
   role: ProfileRole;
   first_name: string | null;
   last_name: string | null;
@@ -51,6 +74,8 @@ export interface QuizCategory {
   name: string;
   description: string | null;
   organization_id: string;
+  region_id: string | null;
+  scope: ContentScope;
   created_at: string;
   updated_at: string;
 }
@@ -61,6 +86,9 @@ export interface Quiz {
   description: string | null;
   category_id: string;
   organization_id: string;
+  region_id: string | null;
+  scope: ContentScope;
+  pending_approval: boolean;
   passing_score: number;
   time_limit: number | null;
   created_at: string;
@@ -100,6 +128,9 @@ export interface StudyMaterial {
   content: string;
   category_id: string;
   organization_id: string;
+  region_id: string | null;
+  scope: ContentScope;
+  pending_approval: boolean;
   order: number;
   created_at: string;
   updated_at: string;
@@ -110,6 +141,16 @@ export interface StudyMaterial {
 export interface Database {
   public: {
     Tables: {
+      regions: {
+        Row: Region;
+        Insert: Omit<Region, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<Region, 'id'>>;
+      };
+      region_admins: {
+        Row: RegionAdmin;
+        Insert: Omit<RegionAdmin, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<RegionAdmin, 'id'>>;
+      };
       organizations: {
         Row: Organization;
         Insert: Omit<Organization, 'id' | 'created_at' | 'updated_at'>;
@@ -207,9 +248,26 @@ export interface Database {
           role: ProfileRole;
         };
       };
+      get_user_region: {
+        Args: Record<string, never>;
+        Returns: string | null;
+      };
+      get_user_region_role: {
+        Args: Record<string, never>;
+        Returns: 'primary' | 'secondary' | null;
+      };
+      is_region_admin: {
+        Args: { user_id: string; region_id: string };
+        Returns: boolean;
+      };
+      can_manage_global_content: {
+        Args: Record<string, never>;
+        Returns: boolean;
+      };
     };
     Enums: {
       user_role: ProfileRole;
+      content_scope: ContentScope;
     };
   };
 }

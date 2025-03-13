@@ -1,5 +1,5 @@
 import { BaseService, ServiceResult } from './BaseService';
-import { Profile, RegistrationResult } from '../types/database';
+import { Profile, RegistrationResult, Database, Organization } from '../types/database';
 import { monitoring } from './MonitoringService';
 import { clearAuthCache } from '../utils/authCache';
 import { createClient } from '@supabase/supabase-js';
@@ -14,8 +14,34 @@ interface CreateUserParams {
   password: string;
   role: Profile['role'];
   organizationId: string;
+  firstName?: string;
+  lastName?: string;
+  regionId: string | null;
   sendEmail?: boolean;
 }
+
+type OrganizationResponse = {
+  id: string;
+  name: string;
+  owner_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type RawProfileResponse = {
+  id: string;
+  email: string;
+  role: Profile['role'];
+  organization_id: string | null;
+  region_id: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
+  created_at: string;
+  updated_at: string;
+  force_password_change: boolean;
+  organization: OrganizationResponse | null;
+};
 
 export class UserService extends BaseService<'profiles'> {
   private pendingRegistration: PendingRegistration | null = null;
@@ -24,24 +50,166 @@ export class UserService extends BaseService<'profiles'> {
     super('profiles');
   }
 
-  /**
-   * Create a new user account with an organization role using standard Supabase auth
-   */
+  async getCurrentUser(): Promise<ServiceResult<Profile>> {
+    try {
+      const { data: session } = await this.supabase.auth.getSession();
+      if (!session?.session?.user) {
+        throw new Error('No authenticated user');
+      }
+
+      const userId = session.session.user.id;
+
+      // Query profile and organization in a single request
+      const { data: profilesData, error: profileError } = await this.supabase
+        .from('profiles')
+        .select(
+          `
+          id,
+          email,
+          role,
+          organization_id,
+          region_id,
+          first_name,
+          last_name,
+          avatar_url,
+          created_at,
+          updated_at,
+          force_password_change,
+          organization:organizations (
+            id,
+            name,
+            owner_id,
+            created_at,
+            updated_at
+          )
+        `
+        )
+        .eq('id', userId)
+        .limit(1);
+
+      if (profileError) throw profileError;
+      if (!profilesData?.length) return { data: null, error: null };
+
+      // Cast the raw response to our known structure with intermediate step
+      const rawData = profilesData[0] as unknown;
+      const rawProfile = rawData as RawProfileResponse;
+
+      // Create the full profile with explicitly typed data
+      const fullProfile: Profile = {
+        id: rawProfile.id,
+        email: rawProfile.email,
+        role: rawProfile.role,
+        organization_id: rawProfile.organization_id,
+        region_id: rawProfile.region_id,
+        first_name: rawProfile.first_name,
+        last_name: rawProfile.last_name,
+        avatar_url: rawProfile.avatar_url,
+        created_at: rawProfile.created_at,
+        updated_at: rawProfile.updated_at,
+        force_password_change: rawProfile.force_password_change || false,
+        organization: rawProfile.organization || undefined,
+      };
+
+      return { data: fullProfile, error: null };
+    } catch (error) {
+      return {
+        data: null,
+        error: this.handleError(error, {
+          context: 'UserService.getCurrentUser',
+          operation: 'getCurrentUser',
+        }),
+      };
+    }
+  }
+
+  async updateProfile(updates: Partial<Profile>): Promise<ServiceResult<Profile>> {
+    try {
+      const { data: session } = await this.supabase.auth.getSession();
+      if (!session?.session?.user) {
+        throw new Error('No authenticated user');
+      }
+
+      const userId = session.session.user.id;
+
+      // Update profile and get organization data in a single request
+      const { data: updatedProfile, error: updateError } = await this.supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', userId)
+        .select(
+          `
+          id,
+          email,
+          role,
+          organization_id,
+          region_id,
+          first_name,
+          last_name,
+          avatar_url,
+          created_at,
+          updated_at,
+          force_password_change,
+          organization:organizations (
+            id,
+            name,
+            owner_id,
+            created_at,
+            updated_at
+          )
+          `
+        )
+        .single();
+
+      if (updateError) throw updateError;
+
+      // Cast the raw response to our known structure with intermediate step
+      const rawData = updatedProfile as unknown;
+      const rawProfile = rawData as RawProfileResponse;
+
+      // Create the full profile with explicitly typed data
+      const fullProfile: Profile = {
+        id: rawProfile.id,
+        email: rawProfile.email,
+        role: rawProfile.role,
+        organization_id: rawProfile.organization_id,
+        region_id: rawProfile.region_id,
+        first_name: rawProfile.first_name,
+        last_name: rawProfile.last_name,
+        avatar_url: rawProfile.avatar_url,
+        created_at: rawProfile.created_at,
+        updated_at: rawProfile.updated_at,
+        force_password_change: rawProfile.force_password_change || false,
+        organization: rawProfile.organization || undefined,
+      };
+
+      return { data: fullProfile, error: null };
+    } catch (error) {
+      return {
+        data: null,
+        error: this.handleError(error, {
+          context: 'UserService.updateProfile',
+          operation: 'updateProfile',
+        }),
+      };
+    }
+  }
+
   async createUser({
     email,
     password,
     role,
     organizationId,
+    firstName,
+    lastName,
+    regionId = null,
     sendEmail = false,
   }: CreateUserParams): Promise<ServiceResult<{ userId: string; emailSent?: boolean }>> {
     try {
-      // Get current user's ID to track who created the account
       const { data: session } = await this.supabase.auth.getSession();
       if (!session?.session?.user) {
         throw new Error('Not authenticated');
       }
 
-      // Step 1: Create the user using standard Supabase auth signup
       const { data: authData, error: authError } = await this.supabase.auth.signUp({
         email,
         password,
@@ -55,8 +223,7 @@ export class UserService extends BaseService<'profiles'> {
 
       const userId = authData.user.id;
 
-      // Step 2: Confirm the user's email (since we're creating from admin)
-      // This is needed because signUp doesn't automatically confirm the email
+      // Confirm email for admin-created users
       const supabaseAdmin = createClient(
         process.env.REACT_APP_SUPABASE_URL || '',
         process.env.REACT_APP_SUPABASE_SERVICE_KEY || ''
@@ -68,21 +235,22 @@ export class UserService extends BaseService<'profiles'> {
 
       if (updateError) throw updateError;
 
-      // Step 3: Create profile for the user using RPC function
       const { data: profileData, error: profileError } = await this.supabase.rpc(
-        'create_user_profile',
+        'create_user_profile_v2',
         {
           p_user_id: userId,
           p_email: email,
           p_role: role,
           p_organization_id: organizationId,
+          p_first_name: firstName || null,
+          p_last_name: lastName || null,
+          p_region_id: regionId || null,
           p_created_by: session.session.user.id,
         }
       );
 
       if (profileError) throw profileError;
 
-      // Track user creation for monitoring
       monitoring.startMetric('user_created', {
         role,
         organizationId,
@@ -109,14 +277,10 @@ export class UserService extends BaseService<'profiles'> {
     }
   }
 
-  /**
-   * Check if the current user needs to change their password
-   */
   async checkPasswordChangeRequired(): Promise<ServiceResult<boolean>> {
     try {
       const { data, error } = await this.supabase.rpc('check_password_change_required');
       if (error) throw error;
-
       return { data, error: null };
     } catch (error) {
       return {
@@ -128,9 +292,6 @@ export class UserService extends BaseService<'profiles'> {
     }
   }
 
-  /**
-   * Complete the password change process
-   */
   async completePasswordChange(newPassword: string): Promise<ServiceResult<void>> {
     try {
       const { error } = await this.supabase.rpc('complete_password_change', {
@@ -138,10 +299,7 @@ export class UserService extends BaseService<'profiles'> {
       });
 
       if (error) throw error;
-
-      // Refresh session after password change
       await this.supabase.auth.refreshSession();
-
       return { data: undefined, error: null };
     } catch (error) {
       return {
@@ -155,7 +313,6 @@ export class UserService extends BaseService<'profiles'> {
 
   async uploadAvatar(file: File, userId: string): Promise<ServiceResult<string>> {
     try {
-      // Validate file
       if (!file.type.startsWith('image/')) {
         throw new Error('Please upload an image file');
       }
@@ -163,15 +320,12 @@ export class UserService extends BaseService<'profiles'> {
         throw new Error('File size must be under 2MB');
       }
 
-      // Generate file path
       const fileExt = file.name.split('.').pop();
       if (!fileExt) {
         throw new Error('Invalid file extension');
       }
 
       const filePath = `${userId}/${Date.now()}.${fileExt}`;
-
-      // Upload file to avatars bucket
       const { error: uploadError } = await this.supabase.storage
         .from('avatars')
         .upload(filePath, file, {
@@ -180,7 +334,6 @@ export class UserService extends BaseService<'profiles'> {
         });
 
       if (uploadError) {
-        // Check for specific storage errors
         if (uploadError.message.includes('Permission')) {
           throw new Error('You do not have permission to upload files');
         }
@@ -190,7 +343,6 @@ export class UserService extends BaseService<'profiles'> {
         throw new Error('Failed to upload file: ' + uploadError.message);
       }
 
-      // Get public URL
       const {
         data: { publicUrl },
       } = this.supabase.storage.from('avatars').getPublicUrl(filePath);
@@ -201,11 +353,12 @@ export class UserService extends BaseService<'profiles'> {
 
       return { data: publicUrl, error: null };
     } catch (error) {
-      const err = this.handleError(error, {
-        context: 'UserService',
-        operation: 'uploadAvatar',
-      });
-      return { data: null, error: err };
+      return {
+        data: null,
+        error: this.handleError(error, {
+          context: 'UserService.uploadAvatar',
+        }),
+      };
     }
   }
 
@@ -214,7 +367,6 @@ export class UserService extends BaseService<'profiles'> {
       const { error } = await this.supabase.storage.from('avatars').remove([filePath]);
 
       if (error) {
-        // Check for specific storage errors
         if (error.message.includes('Permission')) {
           throw new Error('You do not have permission to delete this file');
         }
@@ -226,101 +378,12 @@ export class UserService extends BaseService<'profiles'> {
 
       return { data: undefined, error: null };
     } catch (error) {
-      const err = this.handleError(error, {
-        context: 'UserService',
-        operation: 'deleteAvatar',
-      });
-      return { data: null, error: err };
-    }
-  }
-
-  async getCurrentUser(): Promise<ServiceResult<Profile>> {
-    try {
-      const { data: session } = await this.supabase.auth.getSession();
-      if (!session?.session?.user) {
-        throw new Error('No authenticated user');
-      }
-
-      const userId = session.session.user.id;
-
-      console.debug('Getting current user profile:', {
-        userId,
-        email: session.session.user.email,
-      });
-
-      // Use a direct query approach to prevent parameter duplication
-      const { data: profile, error: profileError } = await this.supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      // Handle the case where the query fails because the profile doesn't exist
-      if (profileError) {
-        // Check if it's a "not found" error, which is expected during registration
-        if (
-          profileError.code === 'PGRST116' ||
-          profileError.message?.includes('No rows found') ||
-          profileError.message?.includes('not found')
-        ) {
-          console.debug('No profile found for user:', userId);
-          return { data: null, error: null };
-        }
-
-        console.error('Error getting current user:', {
-          error: profileError,
-          userId,
-        });
-        throw profileError;
-      }
-
-      if (!profile) {
-        console.debug('No profile found for user:', userId);
-        return { data: null, error: null };
-      }
-
-      // If the profile has an organization_id, fetch the organization separately
-      if (profile.organization_id) {
-        try {
-          // Use a direct query approach to prevent parameter duplication
-          const { data: organization, error: orgError } = await this.supabase
-            .from('organizations')
-            .select('*')
-            .eq('id', profile.organization_id)
-            .single();
-
-          if (orgError) {
-            // Check if it's a "not found" error
-            if (
-              orgError.code === 'PGRST116' ||
-              orgError.message?.includes('No rows found') ||
-              orgError.message?.includes('not found')
-            ) {
-              console.warn('Organization not found:', profile.organization_id);
-            } else {
-              console.warn('Error fetching organization:', {
-                error: orgError,
-                organizationId: profile.organization_id,
-              });
-            }
-            // Continue without the organization data
-          } else if (organization) {
-            // Manually add the organization to the profile
-            profile.organization = organization;
-          }
-        } catch (orgFetchError) {
-          console.warn('Exception fetching organization:', orgFetchError);
-          // Continue without the organization data
-        }
-      }
-
-      return { data: profile, error: null };
-    } catch (error) {
-      const err = this.handleError(error, {
-        context: 'UserService',
-        operation: 'getCurrentUser',
-      });
-      return { data: null, error: err };
+      return {
+        data: null,
+        error: this.handleError(error, {
+          context: 'UserService.deleteAvatar',
+        }),
+      };
     }
   }
 
@@ -329,7 +392,6 @@ export class UserService extends BaseService<'profiles'> {
     organizationName: string
   ): Promise<ServiceResult<void>> {
     try {
-      console.debug('Initiating registration:', { email, organizationName });
       this.pendingRegistration = { email, organizationName };
       monitoring.startMetric('registration_initiated', {
         email,
@@ -337,12 +399,13 @@ export class UserService extends BaseService<'profiles'> {
       });
       return { data: undefined, error: null };
     } catch (error) {
-      const err = this.handleError(error, {
-        context: 'UserService',
-        operation: 'initiateRegistration',
-        email,
-      });
-      return { data: null, error: err };
+      return {
+        data: null,
+        error: this.handleError(error, {
+          context: 'UserService.initiateRegistration',
+          email,
+        }),
+      };
     }
   }
 
@@ -362,40 +425,18 @@ export class UserService extends BaseService<'profiles'> {
       }
 
       const { email, organizationName } = this.pendingRegistration;
-
-      console.debug('Starting registration completion:', {
-        userId: session.session.user.id,
-        email,
-        organizationName,
-        metadata: session.session.user.user_metadata,
-      });
-
-      // Clear auth cache before registration
       clearAuthCache();
 
-      // Complete registration using RPC
       const { data, error: rpcError } = await this.supabase.rpc('complete_user_registration', {
         p_user_id: session.session.user.id,
         p_email: email,
         p_organization_name: organizationName,
       });
 
-      // Handle RPC error
       if (rpcError) {
-        // Check for known error cases
         const err = rpcError?.message || 'Registration failed';
 
-        // Log the error details
-        console.error('Registration completion failed:', {
-          error: rpcError,
-          userId: session.session.user.id,
-          email,
-          organizationName,
-        });
-
-        // If profile already exists, treat as success
         if (err.includes('Profile already exists') || err.includes('profiles_pkey')) {
-          console.log('Profile already exists, returning success');
           return {
             data: {
               status: 'success',
@@ -405,7 +446,7 @@ export class UserService extends BaseService<'profiles'> {
               organization_name: organizationName,
               role: 'admin',
               created_at: new Date().toISOString(),
-              organization_id: null as any, // Will be loaded by auth context
+              organization_id: null as any,
             } as RegistrationResult,
             error: null,
           };
@@ -414,9 +455,7 @@ export class UserService extends BaseService<'profiles'> {
         throw new Error(err);
       }
 
-      // Clear pending registration on success
       this.pendingRegistration = null;
-
       monitoring.startMetric('registration_completed', {
         userId: session.session.user.id,
         status: data?.status || 'unknown',
@@ -424,88 +463,12 @@ export class UserService extends BaseService<'profiles'> {
 
       return { data: data as RegistrationResult, error: null };
     } catch (error) {
-      const err = this.handleError(error, {
-        context: 'UserService',
-        operation: 'completeRegistration',
-      });
-      return { data: null, error: err };
-    }
-  }
-
-  async updateProfile(updates: Partial<Profile>): Promise<ServiceResult<Profile>> {
-    try {
-      const { data: session } = await this.supabase.auth.getSession();
-      if (!session?.session?.user) {
-        throw new Error('No authenticated user');
-      }
-
-      console.debug('Updating profile:', {
-        userId: session.session.user.id,
-        updates,
-      });
-
-      const userId = session.session.user.id;
-
-      // Use a direct query approach to prevent parameter duplication
-      const { data: updatedProfile, error } = await this.supabase
-        .from('profiles')
-        .update(updates)
-        .eq('id', userId)
-        .select('*')
-        .single();
-
-      if (error) throw error;
-
-      console.debug('Profile updated successfully:', {
-        userId: session.session.user.id,
-        profileId: updatedProfile.id,
-      });
-
-      // If the profile has an organization_id, fetch the organization separately
-      if (updatedProfile.organization_id) {
-        try {
-          // Use a direct query approach to prevent parameter duplication
-          const { data: organization, error: orgError } = await this.supabase
-            .from('organizations')
-            .select('*')
-            .eq('id', updatedProfile.organization_id)
-            .single();
-
-          if (orgError) {
-            // Check if it's a "not found" error
-            if (
-              orgError.code === 'PGRST116' ||
-              orgError.message?.includes('No rows found') ||
-              orgError.message?.includes('not found')
-            ) {
-              console.warn(
-                'Organization not found after profile update:',
-                updatedProfile.organization_id
-              );
-            } else {
-              console.warn('Error fetching organization after profile update:', {
-                error: orgError,
-                organizationId: updatedProfile.organization_id,
-              });
-            }
-            // Continue without the organization data
-          } else if (organization) {
-            // Manually add the organization to the profile
-            updatedProfile.organization = organization;
-          }
-        } catch (orgFetchError) {
-          console.warn('Exception fetching organization after profile update:', orgFetchError);
-          // Continue without the organization data
-        }
-      }
-
-      return { data: updatedProfile, error: null };
-    } catch (error) {
-      const err = this.handleError(error, {
-        context: 'UserService',
-        operation: 'updateProfile',
-      });
-      return { data: null, error: err };
+      return {
+        data: null,
+        error: this.handleError(error, {
+          context: 'UserService.completeRegistration',
+        }),
+      };
     }
   }
 }

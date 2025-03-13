@@ -3,6 +3,7 @@ import { UserService } from './UserService';
 import { QuizService } from './QuizService';
 import { StudyMaterialService } from './StudyMaterialService';
 import { OrganizationService } from './OrganizationService';
+import { RegionService } from './RegionService';
 import { monitoring } from './MonitoringService';
 
 // Initialize services
@@ -10,6 +11,7 @@ export const userService = new UserService();
 export const quizService = new QuizService();
 export const studyMaterialService = new StudyMaterialService();
 export const organizationService = new OrganizationService();
+export const regionService = new RegionService();
 
 // Export service types
 export type { ServiceResult, ListResult };
@@ -21,4 +23,4 @@ export { BaseService };
 export { monitoring };
 
 // Export individual service classes
-export { UserService, QuizService, StudyMaterialService, OrganizationService };
+export { UserService, QuizService, StudyMaterialService, OrganizationService, RegionService };

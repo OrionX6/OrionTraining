@@ -23,17 +23,26 @@ import {
 } from '@mui/material';
 import { useServices } from '../hooks/useServices';
 import { useAuth } from '../hooks/useAuth';
-import { Profile } from '../types/database';
+import { Profile, Region } from '../types/database';
 import {
   Refresh as RefreshIcon,
   ContentCopy as CopyIcon,
   Email as EmailIcon,
   Check as CheckIcon,
 } from '@mui/icons-material';
+import RegionSelect from './RegionSelect';
 
 interface Props {
   organizationId: string;
   onSuccess?: () => void;
+}
+
+interface FormData {
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: Profile['role'];
+  regionId: string | null;
 }
 
 // Calculate password strength score (0-100)
@@ -89,10 +98,15 @@ function generateTempPassword() {
 
 export default function CreateUserForm({ organizationId, onSuccess }: Props) {
   const { userService } = useServices();
-  const { user } = useAuth();
-  const [email, setEmail] = useState('');
+  const { profile } = useAuth();
+  const [formData, setFormData] = useState<FormData>({
+    email: '',
+    firstName: '',
+    lastName: '',
+    role: 'user',
+    regionId: null,
+  });
   const [tempPassword, setTempPassword] = useState(generateTempPassword());
-  const [role, setRole] = useState<Profile['role']>('user');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -108,6 +122,9 @@ export default function CreateUserForm({ organizationId, onSuccess }: Props) {
   const strengthColor = getStrengthColor(passwordStrength);
   const strengthLabel = getStrengthLabel(passwordStrength);
 
+  const isRegionalRole = (role: Profile['role']) =>
+    ['primary_admin', 'secondary_admin'].includes(role);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -115,39 +132,45 @@ export default function CreateUserForm({ organizationId, onSuccess }: Props) {
     setIsLoading(true);
 
     try {
+      // Validate region selection for regional admin roles
+      if (isRegionalRole(formData.role) && !formData.regionId) {
+        throw new Error('Region selection is required for regional admin roles');
+      }
+
       // Create the user account
       const { error, data } = await userService.createUser({
-        email,
+        email: formData.email,
         password: tempPassword,
-        role,
+        role: formData.role,
         organizationId,
         sendEmail,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        regionId: formData.regionId,
       });
 
       if (error) throw error;
 
       // Store the created user info for the success message
       setLastCreatedUser({
-        email,
+        email: formData.email,
         password: tempPassword,
       });
-      const emailSent = data?.emailSent || false;
 
-      // Show success message
       setSuccess(true);
 
       // Reset form for next user
-      setEmail('');
-      setRole('user');
+      setFormData({
+        email: '',
+        firstName: '',
+        lastName: '',
+        role: 'user',
+        regionId: null,
+      });
       setTempPassword(generateTempPassword());
 
       // Notify parent component
       onSuccess?.();
-
-      // If email sending was requested but failed, show a warning
-      if (sendEmail && !emailSent) {
-        console.warn('Email sending was requested but failed or is not configured');
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create user');
     } finally {
@@ -201,10 +224,6 @@ export default function CreateUserForm({ organizationId, onSuccess }: Props) {
             User created successfully!
           </Typography>
 
-          {/* Always show credentials since email sending is disabled in the backend */}
-          <Typography variant="body2" paragraph>
-            Please share these credentials with the user:
-          </Typography>
           {lastCreatedUser && (
             <Paper elevation={0} sx={{ p: 2, bgcolor: 'background.paper', mb: 2 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
@@ -256,8 +275,7 @@ export default function CreateUserForm({ organizationId, onSuccess }: Props) {
           </Typography>
           {sendEmail && (
             <Typography variant="body2" color="warning.main" sx={{ mt: 1 }}>
-              Note: Automatic email sending is currently disabled. Please manually share these
-              credentials.
+              Note: Please manually share these credentials with the user.
             </Typography>
           )}
         </Alert>
@@ -268,10 +286,28 @@ export default function CreateUserForm({ organizationId, onSuccess }: Props) {
         fullWidth
         label="Email"
         type="email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
+        value={formData.email}
+        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
         disabled={isLoading}
       />
+
+      <Box sx={{ display: 'flex', gap: 2 }}>
+        <TextField
+          fullWidth
+          label="First Name"
+          value={formData.firstName}
+          onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+          disabled={isLoading}
+        />
+
+        <TextField
+          fullWidth
+          label="Last Name"
+          value={formData.lastName}
+          onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+          disabled={isLoading}
+        />
+      </Box>
 
       <Box sx={{ width: '100%' }}>
         <TextField
@@ -334,15 +370,55 @@ export default function CreateUserForm({ organizationId, onSuccess }: Props) {
       <FormControl fullWidth required>
         <InputLabel>Role</InputLabel>
         <Select
-          value={role}
-          onChange={(e) => setRole(e.target.value as Profile['role'])}
+          value={formData.role}
+          onChange={(e) => {
+            const newRole = e.target.value as Profile['role'];
+            setFormData((prev) => ({
+              ...prev,
+              role: newRole,
+              // Clear region if switching to non-regional role
+              regionId: isRegionalRole(newRole) ? prev.regionId : null,
+            }));
+          }}
           label="Role"
+          disabled={isLoading}
         >
-          <MenuItem value="user">User</MenuItem>
+          {profile?.role === 'super_admin' && <MenuItem value="super_admin">Super Admin</MenuItem>}
           <MenuItem value="admin">Admin</MenuItem>
+          <MenuItem value="primary_admin">
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              Primary Admin
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                (requires region)
+              </Typography>
+            </Box>
+          </MenuItem>
+          <MenuItem value="secondary_admin">
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              Secondary Admin
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                (requires region)
+              </Typography>
+            </Box>
+          </MenuItem>
+          <MenuItem value="user">User</MenuItem>
         </Select>
         <FormHelperText>Select the user's role in the organization</FormHelperText>
       </FormControl>
+
+      <RegionSelect
+        organizationId={organizationId}
+        value={formData.regionId}
+        onChange={(regionId) => setFormData((prev) => ({ ...prev, regionId }))}
+        required={isRegionalRole(formData.role)}
+        error={isRegionalRole(formData.role) && !formData.regionId}
+        helperText={
+          isRegionalRole(formData.role)
+            ? 'Region selection is required for this role'
+            : 'Optionally assign user to a region'
+        }
+        disabled={isLoading}
+      />
 
       <FormControlLabel
         control={
@@ -367,7 +443,7 @@ export default function CreateUserForm({ organizationId, onSuccess }: Props) {
         type="submit"
         variant="contained"
         color="primary"
-        disabled={isLoading}
+        disabled={isLoading || (isRegionalRole(formData.role) && !formData.regionId)}
         startIcon={isLoading ? <CircularProgress size={20} /> : null}
       >
         Create User

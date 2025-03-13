@@ -1,216 +1,178 @@
 # Development Plan: Training Hub SaaS
 
 ## Overview
-This document outlines the development plan for transforming the existing training program into a cloud-based SaaS solution. The plan is divided into phases, with Phase 1 focusing on MVP features and subsequent phases adding more advanced functionality.
+
+This document outlines the development plan for transforming the existing training program into a cloud-based SaaS solution. The plan is divided into phases, with Phase 1 focusing on core infrastructure and foundational features.
 
 ## Technology Stack
-- Frontend: React with Material-UI (MUI)
-- Backend: Supabase
-- Authentication: Supabase Auth
-- Database: PostgreSQL (via Supabase)
-- Storage: Supabase Storage
+
+- Frontend: React with Material-UI (MUI) ✅
+- Backend: Supabase ✅
+- Authentication: Supabase Auth ✅
+- Database: PostgreSQL (via Supabase) ✅
+- Storage: Supabase Storage ✅
 - Hosting: TBD based on requirements
 
-## Phase 1: MVP (Minimum Viable Product)
+## Phase 1: Core Infrastructure
 
 ### Timeline: 4-6 weeks
 
 ### Core Features
 
 1. Authentication & User Management
+
    - [x] Basic Supabase Auth integration
-   - [ ] User registration and login
-   - [ ] Password reset functionality
-   - [ ] Basic role system (Super Admin, Admin, User)
-   - [ ] Email verification
-   
-2. Quiz System
+   - [x] User registration and login
+   - [x] Password reset functionality
+   - [x] Email verification
+   - [x] Profile management
+   - [x] Avatar upload & management
+
+2. Regional Management System
+
+   - [ ] Region creation and management
+   - [ ] Regional user hierarchy
+     - [ ] Super Admin capabilities
+     - [ ] Primary Admin per region
+     - [ ] Secondary Admin management
+     - [ ] User-region association
+   - [ ] Content scope management
+     - [ ] Global vs regional content structure
+     - [ ] Content visibility rules
+     - [ ] Global content approval system
+   - [ ] Regional access control
+     - [ ] Permission boundaries
+     - [ ] Role-based access
+     - [ ] Admin transfer functionality
+
+3. Database Foundation
+
+   ```sql
+   -- New Region Tables
+   create table public.regions (
+     id uuid primary key default uuid_generate_v4(),
+     name text not null,
+     description text,
+     created_at timestamptz default now()
+   );
+
+   create table public.region_admins (
+     id uuid primary key default uuid_generate_v4(),
+     region_id uuid references public.regions(id),
+     user_id uuid references public.profiles(id),
+     role text check (role in ('primary', 'secondary')),
+     reports_to uuid references public.profiles(id),
+     created_at timestamptz default now()
+   );
+
+   create table public.region_users (
+     id uuid primary key default uuid_generate_v4(),
+     region_id uuid references public.regions(id),
+     user_id uuid references public.profiles(id),
+     created_at timestamptz default now()
+   );
+
+   -- Content Scope Management
+   alter table public.content add column scope text check (scope in ('global', 'regional'));
+   alter table public.content add column region_id uuid references public.regions(id);
+   alter table public.content add column pending_approval boolean default false;
+   ```
+
+4. Core UI Components ✅
+   - [x] Navigation drawer
+   - [x] User menu
+   - [x] Loading screen
+   - [x] Basic layouts
+   - [x] Form components
+   - [x] Error handling
+   - [x] Protected routes
+
+## Phase 2: Basic Features
+
+### Timeline: 4-6 weeks after Phase 1
+
+1. Quiz System
+
    - [ ] Multiple choice questions
    - [ ] True/False questions
    - [ ] Check-all-that-apply questions
    - [ ] Basic scoring system
    - [ ] Results display
-   - [ ] Basic progress tracking
+   - [ ] Progress tracking
 
-3. Study Guide System
+2. Study Guide System
+
    - [ ] View study materials
    - [ ] Basic content organization
-   - [ ] Immediate feedback on practice questions
+   - [ ] Immediate feedback
    - [ ] Progress tracking
 
-4. Admin Features
-   - [ ] User management
-   - [ ] Content management (CRUD operations)
-   - [ ] Basic reporting
-   - [ ] Access control
-
-5. Analytics Dashboard
-   - [ ] Basic user statistics
+3. Regional Analytics Dashboard
+   - [ ] Region-specific metrics
+   - [ ] User statistics
    - [ ] Quiz completion rates
    - [ ] Score distributions
-   - [ ] Simple data export (CSV)
+   - [ ] Cross-region comparisons
+   - [ ] Data export (CSV)
 
-### Database Schema
+## Phase 3: Enhanced Features
 
-\`\`\`sql
--- Users Table (extends Supabase Auth)
-create table public.profiles (
-  id uuid references auth.users primary key,
-  role text check (role in ('super_admin', 'admin', 'user')),
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
+### Timeline: 4-6 weeks after Phase 2
 
--- Organizations Table
-create table public.organizations (
-  id uuid primary key default uuid_generate_v4(),
-  name text not null,
-  created_at timestamptz default now()
-);
+1. Advanced Analytics
 
--- Quiz Table
-create table public.quizzes (
-  id uuid primary key default uuid_generate_v4(),
-  title text not null,
-  description text,
-  created_by uuid references public.profiles(id),
-  created_at timestamptz default now()
-);
-
--- Questions Table
-create table public.questions (
-  id uuid primary key default uuid_generate_v4(),
-  quiz_id uuid references public.quizzes(id),
-  question_text text not null,
-  question_type text check (question_type in ('multiple_choice', 'true_false', 'check_all')),
-  options jsonb,
-  correct_answers jsonb,
-  explanation text,
-  created_at timestamptz default now()
-);
-
--- Quiz Attempts Table
-create table public.quiz_attempts (
-  id uuid primary key default uuid_generate_v4(),
-  user_id uuid references public.profiles(id),
-  quiz_id uuid references public.quizzes(id),
-  score numeric,
-  answers jsonb,
-  completed_at timestamptz default now()
-);
-\`\`\`
-
-### Technical Implementation Details
-
-1. Project Setup
-   - [ ] Create React project with TypeScript
-   - [ ] Set up Material-UI
-   - [ ] Configure Supabase client
-   - [ ] Set up routing (React Router)
-   - [ ] Implement base layouts
-
-2. Authentication Flow
-   - [ ] Login page
-   - [ ] Registration page
-   - [ ] Password reset flow
-   - [ ] Protected routes
-   - [ ] Role-based access control
-
-3. Quiz Implementation
-   - [ ] Question components
-   - [ ] Quiz flow management
-   - [ ] Scoring system
-   - [ ] Results display
-   - [ ] Progress tracking
-
-4. Study Guide Implementation
-   - [ ] Content display components
-   - [ ] Practice question integration
-   - [ ] Progress tracking
-   - [ ] Feedback system
-
-5. Admin Interface
-   - [ ] User management CRUD
-   - [ ] Content management CRUD
-   - [ ] Basic reporting interface
-   - [ ] Access control implementation
-
-6. Analytics Dashboard
-   - [ ] Data visualization components
-   - [ ] Basic reporting features
-   - [ ] CSV export functionality
-
-## Phase 2: Enhanced Features
-
-### Timeline: 4-6 weeks after MVP
-
-### Features
-
-1. Multi-tenant Support
-   - [ ] Organization management
-   - [ ] Tenant isolation
-   - [ ] Custom branding options
-   - [ ] Organization-specific content
-
-2. Advanced User Roles
-   - [ ] Custom role definitions
-   - [ ] Granular permissions
-   - [ ] Team management
-   - [ ] Access hierarchies
-
-3. Enhanced Analytics
-   - [ ] Advanced reporting
    - [ ] Custom dashboards
-   - [ ] Data visualization improvements
+   - [ ] Advanced reporting
+   - [ ] Performance metrics
    - [ ] Export options (PDF, Excel)
 
-4. Performance Optimizations
+2. Performance Optimizations
+
    - [ ] Caching implementation
    - [ ] Load time improvements
    - [ ] Database optimizations
-   - [ ] API response time enhancements
+   - [ ] API response enhancements
 
-## Phase 3: Advanced Features
-
-### Timeline: 6-8 weeks after Phase 2
-
-### Features
-
-1. Rich Content Support
-   - [ ] Rich text formatting
-   - [ ] Code block support
-   - [ ] Image integration
+3. Enhanced Content Features
+   - [ ] Rich text support
    - [ ] File attachments
+   - [ ] Content categories
+   - [ ] Search functionality
 
-2. Advanced Question Features
+## Phase 4: Advanced Features
+
+### Timeline: 6-8 weeks after Phase 3
+
+1. Learning Paths
+
+   - [ ] Prerequisite tracking
+   - [ ] Achievement system
+   - [ ] Certifications
+
+2. Advanced Question Types
+
    - [ ] Dynamic questions
    - [ ] Timed questions
    - [ ] Hint system
-   - [ ] Question grouping
 
-3. Content Organization
+3. Advanced Content Organization
    - [ ] Difficulty levels
-   - [ ] Tags/categories
-   - [ ] Search functionality
-   - [ ] Related content links
-
-4. Learning Path Features
-   - [ ] Prerequisite tracking
-   - [ ] Learning paths
-   - [ ] Achievement system
-   - [ ] Certifications
+   - [ ] Tags system
+   - [ ] Related content
 
 ## Testing Strategy
 
 1. Unit Testing
-   - Jest for component testing
-   - React Testing Library for UI testing
+
+   - Jest for component testing ✅
+   - React Testing Library for UI testing ✅
    - API mocking
 
 2. Integration Testing
-   - End-to-end testing with Cypress
+
+   - End-to-end with Cypress
    - API integration testing
-   - Authentication flow testing
+   - Authentication flow testing ✅
 
 3. Performance Testing
    - Load testing
@@ -220,70 +182,40 @@ create table public.quiz_attempts (
 ## Deployment Strategy
 
 1. Development Environment
-   - Local development setup
-   - Development database
+
+   - Local setup ✅
+   - Development database ✅
    - CI/CD pipeline
 
 2. Staging Environment
+
    - Feature testing
    - Integration testing
    - User acceptance testing
 
 3. Production Environment
-   - Blue-green deployment
+   - Deployment pipeline
    - Database backups
    - Monitoring setup
 
-## Monitoring and Maintenance
-
-1. Application Monitoring
-   - Error tracking
-   - Performance monitoring
-   - User analytics
-
-2. Database Monitoring
-   - Query performance
-   - Storage usage
-   - Backup verification
-
-3. Security Monitoring
-   - Authentication logs
-   - Access attempts
-   - Vulnerability scanning
-
-## Documentation
-
-1. Technical Documentation
-   - API documentation
-   - Database schema
-   - Component documentation
-
-2. User Documentation
-   - Admin guide
-   - User guide
-   - FAQ
-
-3. Development Documentation
-   - Setup guide
-   - Contributing guide
-   - Architecture overview
-
 ## Success Metrics
 
-1. MVP Phase
-   - Successful user authentication
-   - Quiz completion rate
+1. Core Infrastructure Phase
+
+   - Regional system adoption rate
+   - Admin hierarchy effectiveness
+   - Content isolation compliance
+   - Permission boundary effectiveness
+
+2. Basic Features Phase
+
+   - Quiz completion rates
    - Study guide usage
-   - Basic analytics functionality
+   - Analytics utilization
+   - Regional engagement metrics
 
-2. Enhanced Phase
-   - Multi-tenant functionality
-   - Advanced role management
-   - Reporting capabilities
-   - Performance metrics
-
-3. Advanced Phase
+3. Enhanced/Advanced Phases
    - Feature adoption rates
-   - User engagement metrics
    - System performance
    - User satisfaction
+   - Cross-region collaboration

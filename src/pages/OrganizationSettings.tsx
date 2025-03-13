@@ -19,6 +19,7 @@ import OrganizationProfile from '../components/OrganizationProfile';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
 import TeamManagement from '../components/TeamManagement';
+import RegionsTab from '../components/RegionsTab';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -158,6 +159,7 @@ export default function OrganizationSettings() {
           >
             <Tab label="Organization Profile" {...a11yProps(0)} />
             <Tab label="Team Management" {...a11yProps(1)} />
+            <Tab label="Regions" {...a11yProps(2)} />
           </Tabs>
         </Box>
 
@@ -188,6 +190,10 @@ export default function OrganizationSettings() {
 
         <TabPanel value={tabValue} index={1}>
           <TeamManagement organizationId={organization.id} />
+        </TabPanel>
+
+        <TabPanel value={tabValue} index={2}>
+          <RegionsTab />
         </TabPanel>
       </Paper>
     </Container>
